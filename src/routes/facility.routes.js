@@ -19,17 +19,17 @@ router.use(authenticateJWT);
 router.get('/', getFacilities);
 router.get('/:id', getFacilityById);
 
-// Create / Update facilities restricted to ADMIN and APPROVER
+// Create / Update / Delete facilities restricted to ADMIN only
 router.post(
   '/',
-  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  authorizeRoles(ROLES.ADMIN),
   validate(createFacilitySchema),
   createFacility
 );
 
 router.put(
   '/:id',
-  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  authorizeRoles(ROLES.ADMIN),
   validate(updateFacilitySchema),
   updateFacility
 );

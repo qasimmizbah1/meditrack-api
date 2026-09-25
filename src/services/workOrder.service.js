@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { WorkOrderRepository } from '../repositories/workOrder.repository.js';
 import { FacilityRepository } from '../repositories/facility.repository.js';
 import { WorkflowService } from './workflow.service.js';
+import { NotificationService } from './notification.service.js';
+import { UserRepository } from '../repositories/user.repository.js';
 import { AppError } from '../utils/AppError.js';
 import { WORK_ORDER_STATUS } from '../config/constants.js';
 
@@ -95,6 +97,27 @@ export class WorkOrderService {
           uploaded_by: currentUser.id
         });
       }
+    }
+
+    // Trigger in-app notifications to Approvers and Admins
+    try {
+      const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+      const admins = await UserRepository.findAll({ role: 'ADMIN' });
+      const recipients = [...approvers, ...admins];
+
+      for (const recipient of recipients) {
+        if (recipient.id !== currentUser.id) {
+          await NotificationService.sendNotification({
+            userId: recipient.id,
+            title: `New Ticket Reported: ${trackingNumber}`,
+            message: `${currentUser.name} reported "${data.title}" at ${facility.name} (Priority: ${data.priority.toUpperCase()})`,
+            type: data.priority === 'critical' ? 'critical' : 'info',
+            link: `/work-orders/${id}`
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Failed to send work order creation notification:', notifErr.message);
     }
 
     return this.getWorkOrderById(id);
