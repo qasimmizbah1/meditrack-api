@@ -8,16 +8,16 @@ import { ROLES, WORK_ORDER_STATUS } from '../config/constants.js';
 
 const ALLOWED_TRANSITIONS = {
   [WORK_ORDER_STATUS.REPORTED]: {
-    allowedNext: [WORK_ORDER_STATUS.APPROVED, WORK_ORDER_STATUS.CLOSED],
+    allowedNext: [WORK_ORDER_STATUS.APPROVED, WORK_ORDER_STATUS.CANCELLED, WORK_ORDER_STATUS.CLOSED],
     allowedRoles: [ROLES.APPROVER, ROLES.ADMIN]
   },
   [WORK_ORDER_STATUS.APPROVED]: {
-    allowedNext: [WORK_ORDER_STATUS.ASSIGNED],
+    allowedNext: [WORK_ORDER_STATUS.ASSIGNED, WORK_ORDER_STATUS.CANCELLED],
     allowedRoles: [ROLES.APPROVER, ROLES.ADMIN]
   },
   [WORK_ORDER_STATUS.ASSIGNED]: {
-    allowedNext: [WORK_ORDER_STATUS.IN_PROGRESS],
-    allowedRoles: [ROLES.CONTRACTOR, ROLES.ADMIN]
+    allowedNext: [WORK_ORDER_STATUS.IN_PROGRESS, WORK_ORDER_STATUS.CANCELLED],
+    allowedRoles: [ROLES.CONTRACTOR, ROLES.ADMIN, ROLES.APPROVER]
   },
   [WORK_ORDER_STATUS.IN_PROGRESS]: {
     allowedNext: [WORK_ORDER_STATUS.COMPLETED],
@@ -32,6 +32,10 @@ const ALLOWED_TRANSITIONS = {
     allowedRoles: [ROLES.APPROVER, ROLES.ADMIN]
   },
   [WORK_ORDER_STATUS.CLOSED]: {
+    allowedNext: [],
+    allowedRoles: []
+  },
+  [WORK_ORDER_STATUS.CANCELLED]: {
     allowedNext: [],
     allowedRoles: []
   }
@@ -106,7 +110,7 @@ export class WorkflowService {
       updatePayload.completed_at = timestamp;
     } else if (targetStatus === WORK_ORDER_STATUS.VERIFIED) {
       updatePayload.verified_at = timestamp;
-    } else if (targetStatus === WORK_ORDER_STATUS.CLOSED) {
+    } else if (targetStatus === WORK_ORDER_STATUS.CLOSED || targetStatus === WORK_ORDER_STATUS.CANCELLED) {
       updatePayload.closed_at = timestamp;
     }
 

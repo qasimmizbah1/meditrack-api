@@ -17,6 +17,7 @@ export class DashboardRepository {
       completed: 0,
       verified: 0,
       closed: 0,
+      cancelled: 0,
       total: 0
     };
 
@@ -51,7 +52,7 @@ export class DashboardRepository {
     const { rows: facilityRows } = await db.query(`
       SELECT f.id, f.name, f.code, f.status, f.type,
              COUNT(wo.id) as total_work_orders,
-             SUM(CASE WHEN wo.status NOT IN ('verified', 'closed') THEN 1 ELSE 0 END) as active_work_orders
+             SUM(CASE WHEN wo.status NOT IN ('verified', 'closed', 'cancelled') THEN 1 ELSE 0 END) as active_work_orders
       FROM facilities f
       LEFT JOIN work_orders wo ON f.id = wo.facility_id
       GROUP BY f.id

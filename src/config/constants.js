@@ -14,7 +14,8 @@ export const WORK_ORDER_STATUS = {
   IN_PROGRESS: 'in_progress',
   COMPLETED: 'completed',
   VERIFIED: 'verified',
-  CLOSED: 'closed'
+  CLOSED: 'closed',
+  CANCELLED: 'cancelled'
 };
 
 export const WORK_ORDER_PRIORITY = {

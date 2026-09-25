@@ -9,7 +9,8 @@ export const transitionStatusSchema = z.object({
     WORK_ORDER_STATUS.IN_PROGRESS,
     WORK_ORDER_STATUS.COMPLETED,
     WORK_ORDER_STATUS.VERIFIED,
-    WORK_ORDER_STATUS.CLOSED
+    WORK_ORDER_STATUS.CLOSED,
+    WORK_ORDER_STATUS.CANCELLED
   ]),
   notes: z.string().optional().nullable(),
   assigned_to: z.string().optional().nullable(),

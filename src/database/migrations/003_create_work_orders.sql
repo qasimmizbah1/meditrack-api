@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
   location_details TEXT,
   category TEXT NOT NULL DEFAULT 'Biomedical Equipment',
   priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
-  status TEXT NOT NULL DEFAULT 'reported' CHECK (status IN ('reported', 'approved', 'assigned', 'in_progress', 'completed', 'verified', 'closed')),
+  status TEXT NOT NULL DEFAULT 'reported' CHECK (status IN ('reported', 'approved', 'assigned', 'in_progress', 'completed', 'verified', 'closed', 'cancelled')),
   reported_by TEXT NOT NULL,
   assigned_to TEXT,
   contractor_id TEXT,

@@ -55,7 +55,7 @@ export class ContractorRepository {
   static async findById(id) {
     const { rows } = await db.query(
       `SELECT c.*,
-              (SELECT COUNT(*) FROM work_orders wo WHERE wo.assigned_to = c.id AND wo.status NOT IN ('completed', 'verified', 'closed')) as active_jobs_count
+              (SELECT COUNT(*) FROM work_orders wo WHERE wo.assigned_to = c.id AND wo.status NOT IN ('completed', 'verified', 'closed', 'cancelled')) as active_jobs_count
        FROM contractors c 
        WHERE c.id = ? LIMIT 1`,
       [id]

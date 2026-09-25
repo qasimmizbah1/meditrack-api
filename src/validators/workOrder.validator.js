@@ -25,7 +25,8 @@ export const updateWorkOrderSchema = createWorkOrderSchema.partial().extend({
     WORK_ORDER_STATUS.IN_PROGRESS,
     WORK_ORDER_STATUS.COMPLETED,
     WORK_ORDER_STATUS.VERIFIED,
-    WORK_ORDER_STATUS.CLOSED
+    WORK_ORDER_STATUS.CLOSED,
+    WORK_ORDER_STATUS.CANCELLED
   ]).optional(),
   assigned_to: z.string().optional().nullable(),
   contractor_id: z.string().optional().nullable(),
