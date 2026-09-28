@@ -28,12 +28,19 @@ export class WorkOrderRepository {
              f.code as facility_code,
              u.name as reported_by_name,
              u.email as reported_by_email,
-             ua.name as assigned_to_name,
+             COALESCE(c.name, ua.name) as assigned_to_name,
+             c.name as contractor_name,
+             inv.id as invoice_id,
+             inv.invoice_number,
+             inv.status as invoice_status,
+             inv.total_amount as invoice_total_amount,
              (SELECT COUNT(*) FROM work_order_photos wop WHERE wop.work_order_id = wo.id) as photo_count
       FROM work_orders wo
       LEFT JOIN facilities f ON wo.facility_id = f.id
       LEFT JOIN users u ON wo.reported_by = u.id
       LEFT JOIN users ua ON wo.assigned_to = ua.id
+      LEFT JOIN contractors c ON wo.contractor_id = c.id OR wo.assigned_to = c.id
+      LEFT JOIN invoices inv ON inv.work_order_id = wo.id
       WHERE 1=1
     `;
     const params = [];
@@ -67,7 +74,7 @@ export class WorkOrderRepository {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    sql += ` ORDER BY wo.created_at DESC LIMIT ? OFFSET ?`;
+    sql += ` ORDER BY wo.created_at DESC, wo.tracking_number DESC LIMIT ? OFFSET ?`;
     params.push(Number(limit), Number(offset));
 
     const { rows } = await db.query(sql, params);
@@ -120,12 +127,19 @@ export class WorkOrderRepository {
               f.city as facility_city,
               u.name as reported_by_name,
               u.email as reported_by_email,
-              ua.name as assigned_to_name,
-              ua.email as assigned_to_email
+              COALESCE(c.name, ua.name) as assigned_to_name,
+              COALESCE(c.email, ua.email) as assigned_to_email,
+              c.name as contractor_name,
+              inv.id as invoice_id,
+              inv.invoice_number,
+              inv.status as invoice_status,
+              inv.total_amount as invoice_total_amount
        FROM work_orders wo
        LEFT JOIN facilities f ON wo.facility_id = f.id
        LEFT JOIN users u ON wo.reported_by = u.id
        LEFT JOIN users ua ON wo.assigned_to = ua.id
+       LEFT JOIN contractors c ON wo.contractor_id = c.id OR wo.assigned_to = c.id
+       LEFT JOIN invoices inv ON inv.work_order_id = wo.id
        WHERE wo.id = ? LIMIT 1`,
       [id]
     );

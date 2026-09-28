@@ -10,6 +10,7 @@ import invoiceRoutes from './invoice.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import notificationRoutes from './notification.routes.js';
 import ledgerAnchorRoutes from './ledgerAnchor.routes.js';
+import settingsRoutes from './settings.routes.js';
 
 const router = Router();
 
@@ -43,5 +44,8 @@ router.use('/notifications', notificationRoutes);
 
 // Mount Ledger Anchors & Cryptographic Audit Routes
 router.use('/ledger', ledgerAnchorRoutes);
+
+// Mount System Settings Routes
+router.use('/settings', settingsRoutes);
 
 export default router;

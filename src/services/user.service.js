@@ -76,6 +76,16 @@ export class UserService {
 
     const payload = {};
     if (updateData.name) payload.name = updateData.name;
+    if (updateData.email && updateData.email.toLowerCase() !== user.email.toLowerCase()) {
+      const existing = await UserRepository.findByEmail(updateData.email);
+      if (existing && existing.id !== id) {
+        throw AppError.conflict('A user with this email address already exists');
+      }
+      payload.email = updateData.email.toLowerCase();
+    }
+    if (updateData.password) {
+      payload.password_hash = await bcrypt.hash(updateData.password, 10);
+    }
     if (updateData.role) {
       payload.role = updateData.role;
       payload.role_id = `role_${updateData.role.toLowerCase()}`;

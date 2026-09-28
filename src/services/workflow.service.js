@@ -3,8 +3,10 @@ import { WorkOrderRepository } from '../repositories/workOrder.repository.js';
 import { StatusEventRepository, GENESIS_HASH } from '../repositories/statusEvent.repository.js';
 import { computeEventHash, verifyEventChainIntegrity } from '../utils/crypto.js';
 import { NotificationService } from './notification.service.js';
+import { UserRepository } from '../repositories/user.repository.js';
+import { InspectionRepository } from '../repositories/inspection.repository.js';
 import { AppError } from '../utils/AppError.js';
-import { ROLES, WORK_ORDER_STATUS } from '../config/constants.js';
+import { ROLES, WORK_ORDER_STATUS, INSPECTION_STATUS } from '../config/constants.js';
 
 const ALLOWED_TRANSITIONS = {
   [WORK_ORDER_STATUS.REPORTED]: {
@@ -102,12 +104,23 @@ export class WorkflowService {
 
     // 7. Update work order
     const updatePayload = { status: targetStatus };
-    if (assignedTo) updatePayload.assigned_to = assignedTo;
-    if (contractorId) updatePayload.contractor_id = contractorId;
-    if (actualCost !== undefined) updatePayload.actual_cost = actualCost;
+    if (assignedTo) {
+      updatePayload.assigned_to = assignedTo;
+      updatePayload.contractor_id = contractorId || assignedTo;
+    } else if (contractorId) {
+      updatePayload.contractor_id = contractorId;
+      updatePayload.assigned_to = contractorId;
+    }
+    if (targetStatus === WORK_ORDER_STATUS.APPROVED && actualCost !== undefined) {
+      updatePayload.estimated_cost = actualCost;
+    } else if (actualCost !== undefined) {
+      updatePayload.actual_cost = actualCost;
+    }
 
     if (targetStatus === WORK_ORDER_STATUS.COMPLETED) {
       updatePayload.completed_at = timestamp;
+      // Guarantee actual_cost is strictly the budget approved by the Approver
+      updatePayload.actual_cost = workOrder.estimated_cost ?? workOrder.actual_cost ?? actualCost ?? 0;
     } else if (targetStatus === WORK_ORDER_STATUS.VERIFIED) {
       updatePayload.verified_at = timestamp;
     } else if (targetStatus === WORK_ORDER_STATUS.CLOSED || targetStatus === WORK_ORDER_STATUS.CANCELLED) {
@@ -116,25 +129,226 @@ export class WorkflowService {
 
     const updatedWorkOrder = await WorkOrderRepository.update(workOrderId, updatePayload);
 
-    // Trigger in-app notifications
-    try {
-      if (assignedTo) {
-        await NotificationService.sendNotification({
-          userId: assignedTo,
-          title: `Work Order Assigned (${workOrder.tracking_number})`,
-          message: `You have been assigned to ${workOrder.title}`,
-          type: 'work_order',
-          link: `/work-orders/${workOrderId}`
-        });
+    // If verified or failed QC by Inspector / Admin, ensure an inspection entry is logged for audit & UI tables
+    if (targetStatus === WORK_ORDER_STATUS.VERIFIED && (actor.role === ROLES.INSPECTOR || actor.role === ROLES.ADMIN)) {
+      try {
+        const existingInspections = await InspectionRepository.findByWorkOrderId(workOrderId);
+        const hasRecentPass = existingInspections.some(
+          (insp) => insp.result === INSPECTION_STATUS.PASS && (Date.now() - new Date(insp.inspected_at).getTime()) < 15000
+        );
+        if (!hasRecentPass) {
+          const inspId = `insp_${crypto.randomBytes(6).toString('hex')}`;
+          await InspectionRepository.create({
+            id: inspId,
+            work_order_id: workOrderId,
+            inspector_id: actor.id,
+            result: INSPECTION_STATUS.PASS,
+            checklist_results: JSON.stringify({
+              calibration: true,
+              electricalSafety: true,
+              sterilization: true,
+              functionalTesting: true
+            }),
+            observations: notes || `Safety & Quality Verification passed by ${actor.name || 'Safety Inspector'}. Work verified compliant.`,
+            recommendations: 'Authorized for contractor invoice billing and clinical deployment.'
+          });
+        }
+      } catch (inspErr) {
+        console.warn('Auto inspection log creation skipped:', inspErr.message);
       }
+    } else if (currentStatus === WORK_ORDER_STATUS.COMPLETED && targetStatus === WORK_ORDER_STATUS.IN_PROGRESS && (actor.role === ROLES.INSPECTOR || actor.role === ROLES.ADMIN)) {
+      try {
+        const existingInspections = await InspectionRepository.findByWorkOrderId(workOrderId);
+        const hasRecentFail = existingInspections.some(
+          (insp) => insp.result === INSPECTION_STATUS.FAIL && (Date.now() - new Date(insp.inspected_at).getTime()) < 15000
+        );
+        if (!hasRecentFail) {
+          const inspId = `insp_${crypto.randomBytes(6).toString('hex')}`;
+          await InspectionRepository.create({
+            id: inspId,
+            work_order_id: workOrderId,
+            inspector_id: actor.id,
+            result: INSPECTION_STATUS.FAIL,
+            checklist_results: null,
+            observations: notes || `Quality Inspection FAILED - Returned for corrective maintenance by ${actor.name || 'Safety Inspector'}.`,
+            recommendations: 'Contractor must perform recalibration and fix safety issues.'
+          });
+        }
+      } catch (inspErr) {
+        console.warn('Auto inspection fail log creation skipped:', inspErr.message);
+      }
+    }
+
+    // Trigger role-based in-app notifications
+    try {
+      // Helper to fetch all contractor recipient user IDs
+      const contractorUsers = await UserRepository.findAll({ role: 'CONTRACTOR' });
+      const contractorUserIds = new Set(contractorUsers.map((u) => u.id));
+      if (workOrder.assigned_to) {
+        const directUser = await UserRepository.findById(workOrder.assigned_to);
+        if (directUser) contractorUserIds.add(directUser.id);
+      }
+      if (assignedTo) {
+        const directAssigned = await UserRepository.findById(assignedTo);
+        if (directAssigned) contractorUserIds.add(directAssigned.id);
+      }
+
+      // 1. If assigned to contractor/technician
+      if (assignedTo || targetStatus === WORK_ORDER_STATUS.ASSIGNED) {
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `Work Order Assigned: ${workOrder.tracking_number}`,
+              message: `You have been assigned to "${workOrder.title}". Action Required: Initiate field repairs.`,
+              type: 'work_order',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 2. When Approved
+      if (targetStatus === WORK_ORDER_STATUS.APPROVED) {
+        const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+        for (const approver of approvers) {
+          if (approver.id !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: approver.id,
+              title: `Work Order Approved: ${workOrder.tracking_number}`,
+              message: `"${workOrder.title}" was approved by ${actor.name || actor.role}. Ready for contractor assignment.`,
+              type: 'info',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 3. When Contractor MARKS COMPLETED: Alert Inspectors, Approvers, and Admins
+      if (targetStatus === WORK_ORDER_STATUS.COMPLETED) {
+        const inspectors = await UserRepository.findAll({ role: 'INSPECTOR' });
+        const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+        const admins = await UserRepository.findAll({ role: 'ADMIN' });
+        const qcRecipients = [...inspectors, ...approvers, ...admins];
+
+        for (const recipient of qcRecipients) {
+          if (recipient.id !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: recipient.id,
+              title: `QC Inspection Required: ${workOrder.tracking_number}`,
+              message: `${actor.name || 'Contractor'} has completed repair work on "${workOrder.title}". Action Required: Perform safety verification.`,
+              type: 'warning',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 4. When Inspector VERIFIES: Alert Contractor and Approver
+      if (targetStatus === WORK_ORDER_STATUS.VERIFIED) {
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `QC Verified: ${workOrder.tracking_number}`,
+              message: `QC Inspector ${actor.name || 'Inspector'} verified "${workOrder.title}". You can now generate your invoice claim.`,
+              type: 'success',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+
+        const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+        for (const approver of approvers) {
+          if (approver.id !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: approver.id,
+              title: `Work Order Verified: ${workOrder.tracking_number}`,
+              message: `"${workOrder.title}" passed safety inspection and is ready for billing & closing.`,
+              type: 'success',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 5. When Inspector FAILS QC (Returned to In Progress from Completed): Alert Contractor
+      if (currentStatus === WORK_ORDER_STATUS.COMPLETED && targetStatus === WORK_ORDER_STATUS.IN_PROGRESS) {
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `QC Inspection Failed / Returned: ${workOrder.tracking_number}`,
+              message: `QC Inspector ${actor.name || 'Inspector'} returned work order for corrective repairs. Remarks: ${notes || 'Correction needed.'}`,
+              type: 'critical',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 6. When Work Order is CANCELLED / REJECTED: Alert Contractor & Staff
+      if (targetStatus === WORK_ORDER_STATUS.CANCELLED) {
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `Work Order Cancelled / Rejected: ${workOrder.tracking_number}`,
+              message: `Work order "${workOrder.title}" was rejected by ${actor.name || actor.role}. Reason: ${notes || 'Cancelled by leadership.'}`,
+              type: 'critical',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 7. When Work Order is CLOSED: Alert Contractor
+      if (targetStatus === WORK_ORDER_STATUS.CLOSED) {
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `Work Order Closed: ${workOrder.tracking_number}`,
+              message: `Work order "${workOrder.title}" is officially verified, paid, and closed.`,
+              type: 'success',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+      }
+
+      // 8. Notify Staff reporter ONLY for key resolution milestones (Approved, Closed, Cancelled)
       if (workOrder.reported_by && workOrder.reported_by !== actor.id) {
-        await NotificationService.sendNotification({
-          userId: workOrder.reported_by,
-          title: `Status Updated: ${workOrder.tracking_number}`,
-          message: `Order transitioned from ${currentStatus} to ${targetStatus} by ${actor.name || actor.role}`,
-          type: targetStatus === WORK_ORDER_STATUS.VERIFIED ? 'success' : 'info',
-          link: `/work-orders/${workOrderId}`
-        });
+        let staffNotif = null;
+        if (targetStatus === WORK_ORDER_STATUS.APPROVED) {
+          staffNotif = {
+            title: `Ticket Approved: ${workOrder.tracking_number}`,
+            message: `Your reported issue "${workOrder.title}" was approved by leadership and scheduled for repair.`,
+            type: 'info'
+          };
+        } else if (targetStatus === WORK_ORDER_STATUS.CLOSED) {
+          staffNotif = {
+            title: `Issue Resolved & Closed: ${workOrder.tracking_number}`,
+            message: `Maintenance repairs on "${workOrder.title}" have been verified and ticket is officially resolved.`,
+            type: 'success'
+          };
+        } else if (targetStatus === WORK_ORDER_STATUS.CANCELLED) {
+          staffNotif = {
+            title: `Ticket Cancelled / Rejected: ${workOrder.tracking_number}`,
+            message: `Your reported ticket "${workOrder.title}" was cancelled by ${actor.name || actor.role}.${notes ? ` Reason: ${notes}` : ''}`,
+            type: 'critical'
+          };
+        }
+
+        if (staffNotif) {
+          await NotificationService.sendNotification({
+            userId: workOrder.reported_by,
+            title: staffNotif.title,
+            message: staffNotif.message,
+            type: staffNotif.type,
+            link: `/work-orders/${workOrderId}`
+          });
+        }
       }
     } catch (notifErr) {
       console.warn('Failed to send notification:', notifErr.message);

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { NotificationRepository } from '../repositories/notification.repository.js';
+import { UserRepository } from '../repositories/user.repository.js';
 
 export class NotificationService {
   static async getUserNotifications(userId, query = {}) {
@@ -38,14 +39,23 @@ export class NotificationService {
 
   static async sendNotification({ userId, title, message, type = 'info', link = null }) {
     if (!userId) return null;
-    const id = crypto.randomUUID();
-    return await NotificationRepository.create({
-      id,
-      user_id: userId,
-      title,
-      message,
-      type,
-      link
-    });
+    try {
+      const user = await UserRepository.findById(userId);
+      if (!user) {
+        return null;
+      }
+      const id = crypto.randomUUID();
+      return await NotificationRepository.create({
+        id,
+        user_id: userId,
+        title,
+        message,
+        type,
+        link
+      });
+    } catch (err) {
+      console.warn('Failed to send notification safely:', err.message);
+      return null;
+    }
   }
 }

@@ -24,6 +24,8 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = z.object({
   name: z.string().min(2).optional(),
+  email: z.string().email('Invalid email address format').optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   role: z.enum([
     ROLES.ADMIN,
     ROLES.STAFF,
