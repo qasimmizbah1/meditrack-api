@@ -22,8 +22,9 @@ export class DashboardRepository {
     };
 
     woStatusRows.forEach((r) => {
-      if (statusCounts[r.status] !== undefined) {
-        statusCounts[r.status] = Number(r.count);
+      const s = (r.status || '').toLowerCase().trim();
+      if (statusCounts[s] !== undefined) {
+        statusCounts[s] = Number(r.count);
       }
       statusCounts.total += Number(r.count);
     });
@@ -43,8 +44,9 @@ export class DashboardRepository {
     };
 
     woPriorityRows.forEach((r) => {
-      if (priorityCounts[r.priority] !== undefined) {
-        priorityCounts[r.priority] = Number(r.count);
+      const p = (r.priority || '').toLowerCase().trim();
+      if (priorityCounts[p] !== undefined) {
+        priorityCounts[p] = Number(r.count);
       }
     });
 

@@ -128,12 +128,12 @@ export class InvoiceService {
       throw new AppError('Invoice not found', 404);
     }
 
-    // Require associated work order to be CLOSED before Approving or Paying invoice claim
+    // Require associated work order to be VERIFIED or CLOSED before Approving or Paying invoice claim
     if ((status === INVOICE_STATUS.APPROVED || status === INVOICE_STATUS.PAID) && invoice.work_order_id) {
       const wo = await WorkOrderRepository.findById(invoice.work_order_id);
-      if (wo && wo.status !== WORK_ORDER_STATUS.CLOSED) {
+      if (wo && wo.status !== WORK_ORDER_STATUS.CLOSED && wo.status !== WORK_ORDER_STATUS.VERIFIED) {
         throw new AppError(
-          `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Closed by leadership first (currently '${wo.status}').`,
+          `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Verified or Closed first (currently '${wo.status}').`,
           400
         );
       }
@@ -216,6 +216,49 @@ export class InvoiceService {
       totalPaid: Number(summary?.total_paid || 0),
       totalPending: Number(summary?.total_pending || 0),
       totalApproved: Number(summary?.total_approved || 0)
+    };
+  }
+
+  static async requestInvoice({ work_order_id }, actorUser) {
+    const workOrder = await WorkOrderRepository.findById(work_order_id);
+    if (!workOrder) {
+      throw new AppError('Work Order not found', 404);
+    }
+
+    if (workOrder.status !== WORK_ORDER_STATUS.VERIFIED && workOrder.status !== WORK_ORDER_STATUS.CLOSED) {
+      throw new AppError(
+        `Cannot request invoice for work order in '${workOrder.status}' status. It must be verified or closed first.`,
+        400
+      );
+    }
+
+    const existing = await InvoiceRepository.findByWorkOrderId(work_order_id);
+    if (existing) {
+      throw new AppError(`Invoice claim (${existing.invoice_number}) already exists for this Work Order`, 400);
+    }
+
+    let contractorUsers = [];
+    if (workOrder.contractor_id || workOrder.assigned_to) {
+      const direct = await UserRepository.findById(workOrder.contractor_id || workOrder.assigned_to);
+      if (direct) contractorUsers.push(direct);
+    }
+    if (contractorUsers.length === 0) {
+      contractorUsers = await UserRepository.findAll({ role: 'CONTRACTOR' });
+    }
+
+    for (const contractor of contractorUsers) {
+      await NotificationService.sendNotification({
+        userId: contractor.id,
+        title: `Invoice Claim Requested: ${workOrder.tracking_number}`,
+        message: `${actorUser.name} (${actorUser.role}) has requested you to submit your invoice claim for verified work order ${workOrder.tracking_number} - "${workOrder.title}".`,
+        type: 'invoice',
+        link: `/work-orders/${workOrder.id}`
+      });
+    }
+
+    return {
+      success: true,
+      message: `Invoice claim request sent to contractor (${contractorUsers.map((c) => c.name).join(', ')}) successfully`
     };
   }
 }

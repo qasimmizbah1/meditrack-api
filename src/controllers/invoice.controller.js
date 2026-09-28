@@ -33,4 +33,9 @@ export class InvoiceController {
     const summary = await InvoiceService.getFinancialSummary();
     return ApiResponse.success(res, summary, 'Financial summary retrieved successfully');
   });
+
+  static requestInvoice = catchAsync(async (req, res) => {
+    const result = await InvoiceService.requestInvoice(req.body, req.user);
+    return ApiResponse.success(res, result, result.message);
+  });
 }

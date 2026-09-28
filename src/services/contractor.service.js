@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { ContractorRepository } from '../repositories/contractor.repository.js';
+import { UserRepository } from '../repositories/user.repository.js';
 import { AppError } from '../utils/AppError.js';
 
 export class ContractorService {
@@ -81,7 +82,25 @@ export class ContractorService {
       throw AppError.notFound(`Contractor with ID ${id} not found`);
     }
 
-    return ContractorRepository.update(id, data);
+    const updated = await ContractorRepository.update(id, data);
+
+    // Sync corresponding user name & email if a contractor user account exists
+    try {
+      const user = (await UserRepository.findById(id)) || (await UserRepository.findByEmail(contractor.email));
+      if (user) {
+        const userUpdates = {};
+        if (data.name) userUpdates.name = data.name;
+        if (data.email) userUpdates.email = data.email;
+        if (data.phone) userUpdates.phone = data.phone;
+        if (Object.keys(userUpdates).length > 0) {
+          await UserRepository.update(user.id, userUpdates);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync contractor user updates:', err.message);
+    }
+
+    return updated;
   }
 
   static async uploadDocument(contractorId, docData, file) {

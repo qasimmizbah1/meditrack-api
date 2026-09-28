@@ -20,6 +20,12 @@ router.post(
   InvoiceController.create
 );
 
+router.post(
+  '/request',
+  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  InvoiceController.requestInvoice
+);
+
 router.patch(
   '/:id/status',
   authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),

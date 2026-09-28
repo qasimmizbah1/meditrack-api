@@ -50,8 +50,12 @@ export class WorkOrderRepository {
       params.push(facilityId);
     }
     if (status) {
-      sql += ` AND wo.status = ?`;
-      params.push(status);
+      if (status === 'active') {
+        sql += ` AND wo.status IN ('approved', 'assigned', 'in_progress')`;
+      } else {
+        sql += ` AND wo.status = ?`;
+        params.push(status);
+      }
     }
     if (priority) {
       sql += ` AND wo.priority = ?`;
@@ -90,8 +94,12 @@ export class WorkOrderRepository {
       params.push(facilityId);
     }
     if (status) {
-      sql += ` AND wo.status = ?`;
-      params.push(status);
+      if (status === 'active') {
+        sql += ` AND wo.status IN ('approved', 'assigned', 'in_progress')`;
+      } else {
+        sql += ` AND wo.status = ?`;
+        params.push(status);
+      }
     }
     if (priority) {
       sql += ` AND wo.priority = ?`;
