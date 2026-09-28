@@ -110,8 +110,8 @@ export class WorkOrderService {
           await NotificationService.sendNotification({
             userId: recipient.id,
             title: `New Ticket Reported: ${trackingNumber}`,
-            message: `${currentUser.name} reported "${data.title}" at ${facility.name} (Priority: ${data.priority.toUpperCase()})`,
-            type: data.priority === 'critical' ? 'critical' : 'info',
+            message: `${currentUser.name} reported "${data.title}" at ${facility.name} (Priority: ${data.priority.toUpperCase()}). Action Required: Please review and approve or reject this request.`,
+            type: data.priority === 'critical' ? 'critical' : 'warning',
             link: `/work-orders/${id}`
           });
         }

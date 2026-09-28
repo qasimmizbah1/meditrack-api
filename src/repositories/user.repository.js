@@ -35,8 +35,8 @@ export class UserRepository {
     const params = [];
 
     if (role) {
-      sql += ` AND u.role = ?`;
-      params.push(role);
+      sql += ` AND (UPPER(u.role) = UPPER(?) OR UPPER(r.name) = UPPER(?) OR u.role_id = ?)`;
+      params.push(role, role, role);
     }
     if (status) {
       sql += ` AND u.status = ?`;
