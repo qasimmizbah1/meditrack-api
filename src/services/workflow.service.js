@@ -256,16 +256,27 @@ export class WorkflowService {
         }
       }
 
-      // 2. When Approved
+      // 2. When Approved: Notify Contractors & Contractor Approvers
       if (targetStatus === WORK_ORDER_STATUS.APPROVED) {
         const approvers = await UserRepository.findAll({ role: 'APPROVER' });
         for (const approver of approvers) {
           if (approver.id !== actor.id) {
             await NotificationService.sendNotification({
               userId: approver.id,
-              title: `Work Order Approved: ${workOrder.tracking_number}`,
-              message: `"${workOrder.title}" was approved by ${actor.name || actor.role}. Ready for contractor assignment.`,
+              title: `Work Order Scope Approved: ${workOrder.tracking_number}`,
+              message: `"${workOrder.title}" scope was approved by ${actor.name || actor.role}. Ready for contractor price quote and assignment.`,
               type: 'info',
+              link: `/work-orders/${workOrderId}`
+            });
+          }
+        }
+        for (const cUserId of contractorUserIds) {
+          if (cUserId !== actor.id) {
+            await NotificationService.sendNotification({
+              userId: cUserId,
+              title: `Job Scope Approved: ${workOrder.tracking_number}`,
+              message: `Maintenance issue "${workOrder.title}" has been approved. Action Required: Please review and submit your estimated price quote.`,
+              type: 'work_order',
               link: `/work-orders/${workOrderId}`
             });
           }
