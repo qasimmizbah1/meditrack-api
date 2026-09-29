@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { InvoiceController } from '../controllers/invoice.controller.js';
-import { authenticateJWT, authorizeRoles } from '../middleware/auth.js';
+import { authenticateJWT, authorizeRoles, authorizeApproverScope } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { createInvoiceSchema, updateInvoiceStatusSchema } from '../validators/invoice.validator.js';
-import { ROLES } from '../config/constants.js';
+import { ROLES, APPROVER_SCOPES } from '../config/constants.js';
 
 const router = Router();
 
@@ -28,9 +28,10 @@ router.post(
 
 router.patch(
   '/:id/status',
-  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  authorizeApproverScope(APPROVER_SCOPES.PAYMENT_APPROVER, APPROVER_SCOPES.GENERAL),
   validate(updateInvoiceStatusSchema),
   InvoiceController.updateStatus
 );
 
 export default router;
+

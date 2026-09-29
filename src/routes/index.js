@@ -11,6 +11,7 @@ import dashboardRoutes from './dashboard.routes.js';
 import notificationRoutes from './notification.routes.js';
 import ledgerAnchorRoutes from './ledgerAnchor.routes.js';
 import settingsRoutes from './settings.routes.js';
+import workCategoryRoutes from './workCategory.routes.js';
 
 const router = Router();
 
@@ -47,5 +48,8 @@ router.use('/ledger', ledgerAnchorRoutes);
 
 // Mount System Settings Routes
 router.use('/settings', settingsRoutes);
+
+// Mount Work Categories & Specialties Routes
+router.use('/work-categories', workCategoryRoutes);
 
 export default router;

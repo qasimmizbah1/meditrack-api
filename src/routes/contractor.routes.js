@@ -3,6 +3,7 @@ import {
   getContractors,
   getContractorById,
   createContractor,
+  reviewContractor,
   updateContractor,
   uploadContractorDocument
 } from '../controllers/contractor.controller.js';
@@ -12,9 +13,9 @@ import {
   updateContractorSchema,
   createDocumentSchema
 } from '../validators/contractor.validator.js';
-import { authenticateJWT, authorizeRoles } from '../middleware/auth.js';
+import { authenticateJWT, authorizeRoles, authorizeApproverScope } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
-import { ROLES } from '../config/constants.js';
+import { ROLES, APPROVER_SCOPES } from '../config/constants.js';
 
 const router = Router();
 
@@ -24,17 +25,25 @@ router.use(authenticateJWT);
 router.get('/', getContractors);
 router.get('/:id', getContractorById);
 
-// Create / Update contractors (Admin / Approver)
+// Create contractors (Admin only)
 router.post(
   '/',
-  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  authorizeRoles(ROLES.ADMIN),
   validate(createContractorSchema),
   createContractor
 );
 
+// Review & Activate Contractor (Admin only)
+router.post(
+  '/:id/review',
+  authorizeRoles(ROLES.ADMIN),
+  reviewContractor
+);
+
+// Update contractor details (Admin only)
 router.put(
   '/:id',
-  authorizeRoles(ROLES.ADMIN, ROLES.APPROVER),
+  authorizeRoles(ROLES.ADMIN),
   validate(updateContractorSchema),
   updateContractor
 );

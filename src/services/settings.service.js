@@ -12,8 +12,8 @@ export class SettingsService {
 
     // Seed default settings if not exists
     const defaults = {
-      currency: 'USD',
-      currency_symbol: '$',
+      currency: 'ZAR',
+      currency_symbol: 'R',
       system_name: 'MediTrack',
       organization_name: 'Apex Metro Health System'
     };

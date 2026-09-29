@@ -20,6 +20,7 @@ export class UserService {
       email: data.email,
       passwordHash,
       role: data.role,
+      approverScope: data.approver_scope || (data.role === 'APPROVER' ? 'general' : null),
       roleId,
       phone: data.phone || null,
       facilityId: data.facility_id || null,
@@ -89,6 +90,9 @@ export class UserService {
     if (updateData.role) {
       payload.role = updateData.role;
       payload.role_id = `role_${updateData.role.toLowerCase()}`;
+    }
+    if (updateData.approver_scope !== undefined) {
+      payload.approver_scope = updateData.approver_scope;
     }
     if (updateData.phone !== undefined) payload.phone = updateData.phone;
     if (updateData.facility_id !== undefined) payload.facility_id = updateData.facility_id;

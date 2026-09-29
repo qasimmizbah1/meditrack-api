@@ -49,3 +49,39 @@ export const authorizeRoles = (...roles) => {
     next();
   };
 };
+
+/**
+ * Restricts access to Admin or Approvers matching the authorized approver scopes
+ * @param  {...string} scopes - e.g. 'wo_approver', 'procurement', 'line_manager', 'payment_approver', 'general'
+ */
+export const authorizeApproverScope = (...scopes) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return next(AppError.unauthorized('Authentication required'));
+    }
+
+    // Admin has super-administrative override authority
+    if (req.user.role === 'ADMIN') {
+      return next();
+    }
+
+    if (req.user.role === 'APPROVER') {
+      const userScope = req.user.approver_scope || 'general';
+      if (scopes.includes(userScope) || userScope === 'general') {
+        return next();
+      }
+      return next(
+        AppError.forbidden(
+          `Forbidden: Approver scope '${userScope}' is not authorized to perform this action. Required scope: ${scopes.join(' or ')}`
+        )
+      );
+    }
+
+    return next(
+      AppError.forbidden(
+        `Forbidden: Role '${req.user.role}' is not authorized for this action`
+      )
+    );
+  };
+};
+

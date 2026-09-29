@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { WorkOrderRepository } from '../repositories/workOrder.repository.js';
+import { ContractorRepository } from '../repositories/contractor.repository.js';
 import { StatusEventRepository, GENESIS_HASH } from '../repositories/statusEvent.repository.js';
 import { computeEventHash, verifyEventChainIntegrity } from '../utils/crypto.js';
 import { NotificationService } from './notification.service.js';
@@ -70,9 +71,49 @@ export class WorkflowService {
       );
     }
 
-    // 3. Specific validation rules for transitions
-    if (targetStatus === WORK_ORDER_STATUS.ASSIGNED && !assignedTo && !contractorId && !workOrder.assigned_to) {
-      throw AppError.badRequest('Assigned contractor or technician is required when moving to ASSIGNED status');
+    // Approver sub-scope validation
+    if (actor.role === ROLES.APPROVER) {
+      const scope = actor.approver_scope || 'general';
+      if (targetStatus === WORK_ORDER_STATUS.APPROVED && !['wo_approver', 'general'].includes(scope)) {
+        throw AppError.forbidden(
+          `Forbidden: Approver with scope '${scope}' cannot approve work order budgets. Requires 'wo_approver' or 'general' scope.`
+        );
+      }
+      if (targetStatus === WORK_ORDER_STATUS.ASSIGNED && !['contractor_approver', 'procurement', 'general'].includes(scope)) {
+        throw AppError.forbidden(
+          `Forbidden: Approver with scope '${scope}' cannot assign contractors. Requires 'contractor_approver' or 'general' scope.`
+        );
+      }
+      if (targetStatus === WORK_ORDER_STATUS.CLOSED && !['payment_approver', 'general'].includes(scope)) {
+        throw AppError.forbidden(
+          `Forbidden: Approver with scope '${scope}' cannot close/settle work orders. Requires 'payment_approver' or 'general' scope.`
+        );
+      }
+    }
+
+    // 3. Specific validation rules & Segregation of Duties for transitions
+    if (targetStatus === WORK_ORDER_STATUS.ASSIGNED) {
+      if (!assignedTo && !contractorId && !workOrder.assigned_to) {
+        throw AppError.badRequest('Assigned contractor or technician is required when moving to ASSIGNED status');
+      }
+
+      // Segregation of Duties: User who approved the Work Order budget cannot assign the contractor
+      if (workOrder.approved_by && workOrder.approved_by === actor.id && actor.role !== ROLES.ADMIN) {
+        throw AppError.forbidden(
+          'Segregation of Duties Violation: You approved this Work Order budget. Contractor assignment must be performed by Procurement or an independent approver.'
+        );
+      }
+
+      // Check contractor active approval status (Line Manager approved)
+      const selectedContractorId = assignedTo || contractorId || workOrder.assigned_to;
+      if (selectedContractorId) {
+        const contractor = await ContractorRepository.findById(selectedContractorId);
+        if (contractor && contractor.approval_status && contractor.approval_status !== 'active') {
+          throw AppError.badRequest(
+            `Cannot assign contractor '${contractor.name}'. Contractor is in '${contractor.approval_status}' status and must be approved by a Line Manager first.`
+          );
+        }
+      }
     }
 
     // 4. Fetch the latest status event to get previous_hash
@@ -102,18 +143,25 @@ export class WorkflowService {
       created_at: timestamp
     });
 
-    // 7. Update work order
+    // 7. Update work order with audit tracking
     const updatePayload = { status: targetStatus };
-    if (assignedTo) {
-      updatePayload.assigned_to = assignedTo;
-      updatePayload.contractor_id = contractorId || assignedTo;
-    } else if (contractorId) {
-      updatePayload.contractor_id = contractorId;
-      updatePayload.assigned_to = contractorId;
+    if (targetStatus === WORK_ORDER_STATUS.APPROVED) {
+      updatePayload.approved_by = actor.id;
+      if (actualCost !== undefined) {
+        updatePayload.estimated_cost = actualCost;
+      }
     }
-    if (targetStatus === WORK_ORDER_STATUS.APPROVED && actualCost !== undefined) {
-      updatePayload.estimated_cost = actualCost;
-    } else if (actualCost !== undefined) {
+    if (targetStatus === WORK_ORDER_STATUS.ASSIGNED) {
+      updatePayload.assigned_by = actor.id;
+      if (assignedTo) {
+        updatePayload.assigned_to = assignedTo;
+        updatePayload.contractor_id = contractorId || assignedTo;
+      } else if (contractorId) {
+        updatePayload.contractor_id = contractorId;
+        updatePayload.assigned_to = contractorId;
+      }
+    }
+    if (targetStatus !== WORK_ORDER_STATUS.APPROVED && actualCost !== undefined) {
       updatePayload.actual_cost = actualCost;
     }
 

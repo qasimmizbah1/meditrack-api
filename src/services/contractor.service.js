@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { ContractorRepository } from '../repositories/contractor.repository.js';
 import { UserRepository } from '../repositories/user.repository.js';
+import { NotificationService } from './notification.service.js';
 import { AppError } from '../utils/AppError.js';
 
 export class ContractorService {
@@ -13,6 +14,7 @@ export class ContractorService {
       ContractorRepository.findAll({
         search: query.search,
         complianceStatus: query.compliance_status,
+        approvalStatus: query.approval_status,
         specialty: query.specialty,
         limit,
         offset
@@ -20,6 +22,7 @@ export class ContractorService {
       ContractorRepository.countAll({
         search: query.search,
         complianceStatus: query.compliance_status,
+        approvalStatus: query.approval_status,
         specialty: query.specialty
       })
     ]);
@@ -53,14 +56,16 @@ export class ContractorService {
     };
   }
 
-  static async createContractor(data) {
+  static async createContractor(data, actorUser) {
     const existing = await ContractorRepository.findByRegistration(data.registration_number);
     if (existing) {
       throw AppError.conflict(`Contractor with registration '${data.registration_number}' already exists`);
     }
 
     const id = `cont_${crypto.randomBytes(6).toString('hex')}`;
-    return ContractorRepository.create({
+    const approvalStatus = 'pending_approval';
+
+    const created = await ContractorRepository.create({
       id,
       name: data.name,
       registration_number: data.registration_number.toUpperCase(),
@@ -72,8 +77,68 @@ export class ContractorService {
       city: data.city || null,
       state: data.state || null,
       compliance_status: data.compliance_status || 'compliant',
+      approval_status: approvalStatus,
+      approved_by: null,
+      rejection_reason: null,
       rating: data.rating || 5.0
     });
+
+    // Notify Line Managers if onboarding requires review
+    if (!isAutoApproved) {
+      try {
+        const lineManagers = await UserRepository.findAll({ role: 'APPROVER' });
+        for (const mgr of lineManagers) {
+          if (mgr.approver_scope === 'line_manager' || mgr.approver_scope === 'general') {
+            await NotificationService.sendNotification({
+              userId: mgr.id,
+              title: `Contractor Onboarding: ${data.name}`,
+              message: `New contractor ${data.name} (${data.specialty}) requires Line Manager compliance approval.`,
+              type: 'info',
+              link: `/contractors/${id}`
+            });
+          }
+        }
+      } catch (notifErr) {
+        console.warn('Failed to dispatch contractor review notification:', notifErr.message);
+      }
+    }
+
+    return created;
+  }
+
+  static async reviewContractor(id, { decision, rejection_reason }, actorUser) {
+    const contractor = await ContractorRepository.findById(id);
+    if (!contractor) {
+      throw AppError.notFound(`Contractor with ID ${id} not found`);
+    }
+
+    const isApproved = decision === 'approve';
+    const approvalStatus = isApproved ? 'active' : 'rejected';
+    const reason = isApproved ? null : (rejection_reason || 'Rejected by Line Manager');
+
+    const updated = await ContractorRepository.update(id, {
+      approval_status: approvalStatus,
+      approved_by: actorUser?.id || null,
+      rejection_reason: reason
+    });
+
+    // Notify all admin and approver users of decision
+    try {
+      const admins = await UserRepository.findAll({ role: 'ADMIN' });
+      for (const adm of admins) {
+        await NotificationService.sendNotification({
+          userId: adm.id,
+          title: `Contractor ${isApproved ? 'Approved' : 'Rejected'}: ${contractor.name}`,
+          message: `Line Manager ${actorUser?.name || 'Reviewer'} has ${isApproved ? 'approved' : 'rejected'} contractor ${contractor.name}.${reason ? ` Reason: ${reason}` : ''}`,
+          type: isApproved ? 'success' : 'critical',
+          link: `/contractors/${id}`
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Failed to notify contractor review decision:', notifErr.message);
+    }
+
+    return updated;
   }
 
   static async updateContractor(id, data) {

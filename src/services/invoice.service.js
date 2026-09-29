@@ -131,11 +131,27 @@ export class InvoiceService {
     // Require associated work order to be VERIFIED or CLOSED before Approving or Paying invoice claim
     if ((status === INVOICE_STATUS.APPROVED || status === INVOICE_STATUS.PAID) && invoice.work_order_id) {
       const wo = await WorkOrderRepository.findById(invoice.work_order_id);
-      if (wo && wo.status !== WORK_ORDER_STATUS.CLOSED && wo.status !== WORK_ORDER_STATUS.VERIFIED) {
-        throw new AppError(
-          `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Verified or Closed first (currently '${wo.status}').`,
-          400
-        );
+      if (wo) {
+        if (wo.status !== WORK_ORDER_STATUS.CLOSED && wo.status !== WORK_ORDER_STATUS.VERIFIED) {
+          throw new AppError(
+            `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Verified or Closed first (currently '${wo.status}').`,
+            400
+          );
+        }
+
+        // Segregation of Duties: User who approved the WO budget cannot approve payment
+        if (wo.approved_by && wo.approved_by === actorUser.id && actorUser.role !== 'ADMIN') {
+          throw AppError.forbidden(
+            'Segregation of Duties Violation: You approved the Work Order budget for this ticket. An independent Finance / Payment Approver must authorize payment.'
+          );
+        }
+
+        // Segregation of Duties: User who assigned the contractor cannot approve payment
+        if (wo.assigned_by && wo.assigned_by === actorUser.id && actorUser.role !== 'ADMIN') {
+          throw AppError.forbidden(
+            'Segregation of Duties Violation: You assigned the contractor for this work order. An independent Finance / Payment Approver must authorize payment.'
+          );
+        }
       }
     }
 

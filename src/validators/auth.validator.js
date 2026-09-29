@@ -18,6 +18,7 @@ export const createUserSchema = z.object({
     ROLES.INSPECTOR,
     ROLES.AUDITOR
   ]),
+  approver_scope: z.enum(['wo_approver', 'contractor_approver', 'payment_approver', 'procurement', 'line_manager', 'general']).optional().nullable(),
   phone: z.string().optional().nullable(),
   facility_id: z.string().optional().nullable()
 });
@@ -34,6 +35,7 @@ export const updateUserSchema = z.object({
     ROLES.INSPECTOR,
     ROLES.AUDITOR
   ]).optional(),
+  approver_scope: z.enum(['wo_approver', 'contractor_approver', 'payment_approver', 'procurement', 'line_manager', 'general']).optional().nullable(),
   phone: z.string().optional().nullable(),
   facility_id: z.string().optional().nullable(),
   status: z.enum(['active', 'inactive']).optional()

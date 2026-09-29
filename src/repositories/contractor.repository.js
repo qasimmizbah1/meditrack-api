@@ -1,7 +1,7 @@
 import db from '../database/db.js';
 
 export class ContractorRepository {
-  static async findAll({ search, complianceStatus, specialty, limit = 50, offset = 0 } = {}) {
+  static async findAll({ search, complianceStatus, approvalStatus, specialty, limit = 50, offset = 0 } = {}) {
     let sql = `
       SELECT c.*,
              (SELECT COUNT(*) FROM contractor_documents cd WHERE cd.contractor_id = c.id) as document_count,
@@ -14,6 +14,10 @@ export class ContractorRepository {
     if (complianceStatus) {
       sql += ` AND c.compliance_status = ?`;
       params.push(complianceStatus);
+    }
+    if (approvalStatus) {
+      sql += ` AND c.approval_status = ?`;
+      params.push(approvalStatus);
     }
     if (specialty) {
       sql += ` AND c.specialty LIKE ?`;
@@ -31,13 +35,17 @@ export class ContractorRepository {
     return rows;
   }
 
-  static async countAll({ search, complianceStatus, specialty } = {}) {
+  static async countAll({ search, complianceStatus, approvalStatus, specialty } = {}) {
     let sql = `SELECT COUNT(*) as total FROM contractors c WHERE 1=1`;
     const params = [];
 
     if (complianceStatus) {
       sql += ` AND c.compliance_status = ?`;
       params.push(complianceStatus);
+    }
+    if (approvalStatus) {
+      sql += ` AND c.approval_status = ?`;
+      params.push(approvalStatus);
     }
     if (specialty) {
       sql += ` AND c.specialty LIKE ?`;
@@ -71,11 +79,11 @@ export class ContractorRepository {
     return rows[0] || null;
   }
 
-  static async create({ id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status = 'compliant', rating = 5.0 }) {
+  static async create({ id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status = 'compliant', approval_status = 'pending_approval', approved_by = null, rejection_reason = null, rating = 5.0 }) {
     await db.query(
-      `INSERT INTO contractors (id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status, rating)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status, rating]
+      `INSERT INTO contractors (id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status, approval_status, approved_by, rejection_reason, rating)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, registration_number, specialty, contact_person, email, phone, address, city, state, compliance_status, approval_status, approved_by, rejection_reason, rating]
     );
     return this.findById(id);
   }

@@ -42,3 +42,19 @@ export const CONTRACTOR_COMPLIANCE_STATUS = {
   WARNING: 'warning',
   NON_COMPLIANT: 'non_compliant'
 };
+
+export const APPROVER_SCOPES = {
+  WO_APPROVER: 'wo_approver',
+  CONTRACTOR_APPROVER: 'contractor_approver',
+  PAYMENT_APPROVER: 'payment_approver',
+  PROCUREMENT: 'procurement',
+  LINE_MANAGER: 'line_manager',
+  GENERAL: 'general'
+};
+
+export const CONTRACTOR_APPROVAL_STATUS = {
+  PENDING_APPROVAL: 'pending_approval',
+  ACTIVE: 'active',
+  REJECTED: 'rejected'
+};
+

@@ -13,8 +13,13 @@ export const getContractorById = catchAsync(async (req, res) => {
 });
 
 export const createContractor = catchAsync(async (req, res) => {
-  const contractor = await ContractorService.createContractor(req.body);
+  const contractor = await ContractorService.createContractor(req.body, req.user);
   return ApiResponse.created(res, contractor, 'Contractor registered successfully');
+});
+
+export const reviewContractor = catchAsync(async (req, res) => {
+  const contractor = await ContractorService.reviewContractor(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, contractor, 'Contractor review status updated successfully');
 });
 
 export const updateContractor = catchAsync(async (req, res) => {

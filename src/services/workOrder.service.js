@@ -7,6 +7,9 @@ import { UserRepository } from '../repositories/user.repository.js';
 import { AppError } from '../utils/AppError.js';
 import { WORK_ORDER_STATUS } from '../config/constants.js';
 
+import { StatusEventRepository } from '../repositories/statusEvent.repository.js';
+import { InspectionRepository } from '../repositories/inspection.repository.js';
+
 export class WorkOrderService {
   static async getAllWorkOrders(query, currentUser) {
     const page = Math.max(1, Number(query.page) || 1);
@@ -45,10 +48,17 @@ export class WorkOrderService {
       throw AppError.notFound(`Work order with ID ${id} not found`);
     }
 
-    const photos = await WorkOrderRepository.getPhotos(id);
+    const [photos, inspections, events] = await Promise.all([
+      WorkOrderRepository.getPhotos(id),
+      InspectionRepository.findByWorkOrderId(id),
+      StatusEventRepository.getEventsByWorkOrderId(id)
+    ]);
+
     return {
       ...workOrder,
-      photos
+      photos,
+      inspections,
+      events
     };
   }
 
