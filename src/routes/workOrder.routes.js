@@ -4,7 +4,8 @@ import {
   getWorkOrderById,
   createWorkOrder,
   updateWorkOrder,
-  uploadWorkOrderPhotos
+  uploadWorkOrderPhotos,
+  submitAssessment
 } from '../controllers/workOrder.controller.js';
 import {
   transitionStatus,
@@ -12,7 +13,11 @@ import {
   verifyIntegrity
 } from '../controllers/workflow.controller.js';
 import { validate } from '../middleware/validate.js';
-import { createWorkOrderSchema, updateWorkOrderSchema } from '../validators/workOrder.validator.js';
+import {
+  createWorkOrderSchema,
+  updateWorkOrderSchema,
+  submitAssessmentSchema
+} from '../validators/workOrder.validator.js';
 import { transitionStatusSchema } from '../validators/workflow.validator.js';
 import { authenticateJWT } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -31,6 +36,13 @@ router.post(
   upload.array('photos', 5),
   validate(createWorkOrderSchema),
   createWorkOrder
+);
+
+// Engineering Assessor Scope & Cost Estimation with Automated Funding Dispatcher
+router.post(
+  '/:id/assessment',
+  validate(submitAssessmentSchema),
+  submitAssessment
 );
 
 // Workflow Status Transition (Immutable event & SHA-256 hash generation)
@@ -59,3 +71,4 @@ router.post(
 );
 
 export default router;
+

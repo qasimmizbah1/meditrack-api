@@ -58,8 +58,8 @@ export class WorkOrderRepository {
       }
     }
     if (priority) {
-      sql += ` AND wo.priority = ?`;
-      params.push(priority);
+      sql += ` AND (wo.priority = ? OR wo.urgency_category = ?)`;
+      params.push(priority, priority);
     }
     if (category) {
       sql += ` AND wo.category = ?`;
@@ -102,8 +102,8 @@ export class WorkOrderRepository {
       }
     }
     if (priority) {
-      sql += ` AND wo.priority = ?`;
-      params.push(priority);
+      sql += ` AND (wo.priority = ? OR wo.urgency_category = ?)`;
+      params.push(priority, priority);
     }
     if (category) {
       sql += ` AND wo.category = ?`;
@@ -137,6 +137,8 @@ export class WorkOrderRepository {
               u.email as reported_by_email,
               COALESCE(c.name, ua.name) as assigned_to_name,
               COALESCE(c.email, ua.email) as assigned_to_email,
+              uass.name as assessor_name,
+              uass.email as assessor_email,
               c.name as contractor_name,
               inv.id as invoice_id,
               inv.invoice_number,
@@ -146,6 +148,7 @@ export class WorkOrderRepository {
        LEFT JOIN facilities f ON wo.facility_id = f.id
        LEFT JOIN users u ON wo.reported_by = u.id
        LEFT JOIN users ua ON wo.assigned_to = ua.id
+       LEFT JOIN users uass ON wo.assessor_id = uass.id
        LEFT JOIN contractors c ON wo.contractor_id = c.id OR wo.assigned_to = c.id
        LEFT JOIN invoices inv ON inv.work_order_id = wo.id
        WHERE wo.id = ? LIMIT 1`,
@@ -163,15 +166,18 @@ export class WorkOrderRepository {
     location_details,
     category,
     priority,
+    urgency_category = 'Urgent 4–8 days',
+    funding_route = 'route_b',
     status = 'reported',
     reported_by,
+    approved_by = null,
     estimated_cost = 0,
     due_date
   }) {
     await db.query(
-      `INSERT INTO work_orders (id, tracking_number, title, description, facility_id, location_details, category, priority, status, reported_by, estimated_cost, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, tracking_number, title, description, facility_id, location_details, category, priority, status, reported_by, estimated_cost, due_date]
+      `INSERT INTO work_orders (id, tracking_number, title, description, facility_id, location_details, category, priority, urgency_category, funding_route, status, reported_by, approved_by, estimated_cost, due_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, tracking_number, title, description, facility_id, location_details, category, priority, urgency_category, funding_route, status, reported_by, approved_by, estimated_cost, due_date]
     );
     return this.findById(id);
   }

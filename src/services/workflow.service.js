@@ -422,11 +422,11 @@ export class WorkflowService {
   /**
    * Initializes the genesis status event when a work order is reported
    */
-  static async recordGenesisEvent(workOrderId, reporterId, notes = 'Work order reported') {
+  static async recordGenesisEvent(workOrderId, reporterId, notes = 'Work order reported', initialStatus = WORK_ORDER_STATUS.REPORTED) {
     const timestamp = new Date().toISOString();
     const currentHash = computeEventHash({
       previousHash: GENESIS_HASH,
-      status: WORK_ORDER_STATUS.REPORTED,
+      status: initialStatus,
       actorId: reporterId,
       timestamp
     });
@@ -436,7 +436,7 @@ export class WorkflowService {
     return StatusEventRepository.create({
       id: eventId,
       work_order_id: workOrderId,
-      status: WORK_ORDER_STATUS.REPORTED,
+      status: initialStatus,
       actor_id: reporterId,
       previous_hash: GENESIS_HASH,
       current_hash: currentHash,

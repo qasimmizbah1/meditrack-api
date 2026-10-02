@@ -8,8 +8,13 @@ export const getWorkOrders = catchAsync(async (req, res) => {
 });
 
 export const getWorkOrderById = catchAsync(async (req, res) => {
-  const workOrder = await WorkOrderService.getWorkOrderById(req.params.id);
+  const workOrder = await WorkOrderService.getWorkOrderById(req.params.id, req.user);
   return ApiResponse.success(res, workOrder, 'Work order details retrieved');
+});
+
+export const submitAssessment = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.submitAssessment(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Engineering assessment submitted successfully');
 });
 
 export const createWorkOrder = catchAsync(async (req, res) => {
@@ -32,3 +37,4 @@ export const uploadWorkOrderPhotos = catchAsync(async (req, res) => {
   );
   return ApiResponse.created(res, photos, 'Photos uploaded successfully');
 });
+

@@ -13,6 +13,13 @@ export const createWorkOrderSchema = z.object({
     WORK_ORDER_PRIORITY.HIGH,
     WORK_ORDER_PRIORITY.CRITICAL
   ]).default(WORK_ORDER_PRIORITY.MEDIUM),
+  urgency_category: z.enum([
+    'Critical 0–24h',
+    'Very urgent 2–4 days',
+    'Urgent 4–8 days',
+    '8+ days or statutory'
+  ]).default('Urgent 4–8 days').optional().nullable(),
+  funding_route: z.enum(['route_a', 'route_b']).optional().nullable(),
   estimated_cost: z.coerce.number().min(0).optional().nullable(),
   due_date: z.string().optional().nullable()
 });
@@ -32,3 +39,15 @@ export const updateWorkOrderSchema = createWorkOrderSchema.partial().extend({
   contractor_id: z.string().optional().nullable(),
   actual_cost: z.coerce.number().min(0).optional().nullable()
 });
+
+export const submitAssessmentSchema = z.object({
+  assessment_type: z.enum(['offsite', 'onsite'], {
+    required_error: 'Assessment mode is required (offsite or onsite)'
+  }),
+  assessor_estimate: z.coerce.number().min(0, 'Assessor estimate must be at least R0'),
+  charge_code: z.enum(['PRE', 'ONS', 'TRV', 'FIN'], {
+    required_error: 'Valid charge code is required (PRE, ONS, TRV, FIN)'
+  }),
+  assessment_notes: z.string().optional().nullable()
+});
+

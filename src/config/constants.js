@@ -25,6 +25,18 @@ export const WORK_ORDER_PRIORITY = {
   CRITICAL: 'critical'
 };
 
+export const WORK_ORDER_URGENCY = {
+  CRITICAL_0_24H: 'Critical 0–24h',
+  VERY_URGENT_2_4D: 'Very urgent 2–4 days',
+  URGENT_4_8D: 'Urgent 4–8 days',
+  STATUTORY_8D: '8+ days or statutory'
+};
+
+export const FUNDING_ROUTE = {
+  ROUTE_A: 'route_a', // Over R50 000, Client Funded (NC DOH)
+  ROUTE_B: 'route_b'  // Critical or Under R50 000, Advance Funded (Quantum Built)
+};
+
 export const INSPECTION_STATUS = {
   PASS: 'PASS',
   FAIL: 'FAIL'
