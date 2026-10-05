@@ -286,13 +286,24 @@ async function seedDatabase() {
         phone: '+1 (555) 010-0004'
       },
       {
+        id: 'usr_engineer_01',
+        name: 'David Ndlovu (Site Engineer)',
+        email: 'engineer@meditrack.com',
+        role: ROLES.INSPECTOR,
+        roleId: 'role_inspector',
+        facilityId: null,
+        inspectorScope: 'works_engineer',
+        phone: '+1 (555) 010-0005'
+      },
+      {
         id: 'usr_inspector_01',
-        name: 'Marcus Chen (Safety Inspector)',
+        name: 'Marcus Chen (Site Inspector)',
         email: 'inspector@meditrack.com',
         role: ROLES.INSPECTOR,
         roleId: 'role_inspector',
         facilityId: null,
-        phone: '+1 (555) 010-0005'
+        inspectorScope: 'works_inspector',
+        phone: '+1 (555) 010-0006'
       },
       {
         id: 'usr_auditor_01',
@@ -301,22 +312,24 @@ async function seedDatabase() {
         role: ROLES.AUDITOR,
         roleId: 'role_auditor',
         facilityId: null,
-        phone: '+1 (555) 010-0006'
+        inspectorScope: null,
+        phone: '+1 (555) 010-0007'
       }
     ];
 
     for (const u of demoUsers) {
       await db.query(
-        `INSERT INTO users (id, name, email, password_hash, role, role_id, facility_id, phone, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        `INSERT INTO users (id, name, email, password_hash, role, role_id, facility_id, inspector_scope, phone, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
          ON CONFLICT (email) DO UPDATE SET 
             name = excluded.name, 
             password_hash = excluded.password_hash, 
             role = excluded.role,
             role_id = excluded.role_id,
             facility_id = excluded.facility_id,
+            inspector_scope = excluded.inspector_scope,
             phone = excluded.phone`,
-        [u.id, u.name, u.email, passwordHash, u.role, u.roleId, u.facilityId, u.phone]
+        [u.id, u.name, u.email, passwordHash, u.role, u.roleId, u.facilityId, u.inspectorScope || (u.role === 'INSPECTOR' ? 'both' : null), u.phone]
       );
     }
     console.log('✅ Demo Users seeded.');

@@ -38,3 +38,13 @@ export const uploadWorkOrderPhotos = catchAsync(async (req, res) => {
   return ApiResponse.created(res, photos, 'Photos uploaded successfully');
 });
 
+export const deleteWorkOrder = catchAsync(async (req, res) => {
+  const result = await WorkOrderService.deleteWorkOrder(req.params.id, req.user);
+  return ApiResponse.success(res, result, result.message);
+});
+
+export const clearAllWorkOrders = catchAsync(async (req, res) => {
+  const result = await WorkOrderService.clearAllWorkOrders(req.user);
+  return ApiResponse.success(res, result, result.message);
+});
+

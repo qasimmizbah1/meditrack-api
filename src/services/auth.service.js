@@ -11,6 +11,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       approver_scope: user.approver_scope,
+      inspector_scope: user.inspector_scope,
       facility_id: user.facility_id
     };
     return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });

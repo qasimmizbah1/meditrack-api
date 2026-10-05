@@ -5,7 +5,9 @@ import {
   createWorkOrder,
   updateWorkOrder,
   uploadWorkOrderPhotos,
-  submitAssessment
+  submitAssessment,
+  deleteWorkOrder,
+  clearAllWorkOrders
 } from '../controllers/workOrder.controller.js';
 import {
   transitionStatus,
@@ -19,8 +21,9 @@ import {
   submitAssessmentSchema
 } from '../validators/workOrder.validator.js';
 import { transitionStatusSchema } from '../validators/workflow.validator.js';
-import { authenticateJWT } from '../middleware/auth.js';
+import { authenticateJWT, authorizeRoles } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
+import { ROLES } from '../config/constants.js';
 
 const router = Router();
 
@@ -68,6 +71,20 @@ router.post(
   '/:id/photos',
   upload.array('photos', 5),
   uploadWorkOrderPhotos
+);
+
+// Admin-only: Clear all test work orders and linked test data
+router.delete(
+  '/clear-all',
+  authorizeRoles(ROLES.ADMIN),
+  clearAllWorkOrders
+);
+
+// Admin-only: Delete a single work order and its linked records
+router.delete(
+  '/:id',
+  authorizeRoles(ROLES.ADMIN),
+  deleteWorkOrder
 );
 
 export default router;

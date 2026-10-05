@@ -217,4 +217,50 @@ export class WorkOrderRepository {
     );
     return rows;
   }
+
+  static async deleteById(id) {
+    const rawDb = db.getDb ? db.getDb() : null;
+    if (rawDb) {
+      rawDb.pragma('foreign_keys = OFF');
+      rawDb.exec(`
+        DELETE FROM invoices WHERE work_order_id = '${id}';
+        DELETE FROM inspections WHERE work_order_id = '${id}';
+        DELETE FROM work_order_photos WHERE work_order_id = '${id}';
+        DELETE FROM status_events WHERE work_order_id = '${id}';
+        DELETE FROM work_orders WHERE id = '${id}';
+      `);
+      rawDb.pragma('foreign_keys = ON');
+    } else {
+      await db.query(`DELETE FROM invoices WHERE work_order_id = ?`, [id]);
+      await db.query(`DELETE FROM inspections WHERE work_order_id = ?`, [id]);
+      await db.query(`DELETE FROM work_order_photos WHERE work_order_id = ?`, [id]);
+      await db.query(`DELETE FROM status_events WHERE work_order_id = ?`, [id]);
+      await db.query(`DELETE FROM work_orders WHERE id = ?`, [id]);
+    }
+    return true;
+  }
+
+  static async clearAll() {
+    const rawDb = db.getDb ? db.getDb() : null;
+    if (rawDb) {
+      rawDb.pragma('foreign_keys = OFF');
+      rawDb.exec(`
+        DELETE FROM invoices;
+        DELETE FROM inspections;
+        DELETE FROM work_order_photos;
+        DELETE FROM status_events;
+        DELETE FROM work_orders;
+        DELETE FROM notifications;
+      `);
+      rawDb.pragma('foreign_keys = ON');
+    } else {
+      await db.query(`DELETE FROM invoices`);
+      await db.query(`DELETE FROM inspections`);
+      await db.query(`DELETE FROM work_order_photos`);
+      await db.query(`DELETE FROM status_events`);
+      await db.query(`DELETE FROM work_orders`);
+      await db.query(`DELETE FROM notifications`);
+    }
+    return true;
+  }
 }

@@ -15,5 +15,7 @@ export const transitionStatusSchema = z.object({
   notes: z.string().optional().nullable(),
   assigned_to: z.string().optional().nullable(),
   contractor_id: z.string().optional().nullable(),
-  actual_cost: z.coerce.number().min(0).optional().nullable()
+  actual_cost: z.coerce.number().min(0).optional().nullable(),
+  contractor_quote_ref: z.string().optional().nullable(),
+  direct_issue_justification: z.string().optional().nullable()
 });

@@ -14,7 +14,7 @@ export class UserRepository {
 
   static async findById(id) {
     const { rows } = await db.query(
-      `SELECT u.id, u.name, u.email, u.role, u.approver_scope, u.role_id, u.facility_id, u.phone, u.status, u.created_at, u.updated_at,
+      `SELECT u.id, u.name, u.email, u.role, u.approver_scope, u.inspector_scope, u.role_id, u.facility_id, u.phone, u.status, u.created_at, u.updated_at,
               r.name as role_name
        FROM users u 
        LEFT JOIN roles r ON u.role_id = r.id 
@@ -26,7 +26,7 @@ export class UserRepository {
 
   static async findAll({ role, status, search, limit = 50, offset = 0 } = {}) {
     let sql = `
-      SELECT u.id, u.name, u.email, u.role, u.approver_scope, u.role_id, u.facility_id, u.phone, u.status, u.created_at, u.updated_at,
+      SELECT u.id, u.name, u.email, u.role, u.approver_scope, u.inspector_scope, u.role_id, u.facility_id, u.phone, u.status, u.created_at, u.updated_at,
              r.name as role_name
       FROM users u
       LEFT JOIN roles r ON u.role_id = r.id
@@ -75,12 +75,13 @@ export class UserRepository {
     return rows[0]?.total || 0;
   }
 
-  static async create({ id, name, email, passwordHash, role, approverScope, roleId, phone, facilityId, status = 'active' }) {
+  static async create({ id, name, email, passwordHash, role, approverScope, inspectorScope, roleId, phone, facilityId, status = 'active' }) {
     const scope = approverScope || (role === 'APPROVER' ? 'general' : null);
+    const inspScope = inspectorScope || (role === 'INSPECTOR' ? 'both' : null);
     await db.query(
-      `INSERT INTO users (id, name, email, password_hash, role, approver_scope, role_id, phone, facility_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, name, email, passwordHash, role, scope, roleId, phone, facilityId, status]
+      `INSERT INTO users (id, name, email, password_hash, role, approver_scope, inspector_scope, role_id, phone, facility_id, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, email, passwordHash, role, scope, inspScope, roleId, phone, facilityId, status]
     );
     return this.findById(id);
   }

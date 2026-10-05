@@ -37,17 +37,38 @@ export const updateWorkOrderSchema = createWorkOrderSchema.partial().extend({
   ]).optional(),
   assigned_to: z.string().optional().nullable(),
   contractor_id: z.string().optional().nullable(),
-  actual_cost: z.coerce.number().min(0).optional().nullable()
+  actual_cost: z.coerce.number().min(0).optional().nullable(),
+  system_quote_no: z.string().optional().nullable(),
+  contractor_quote_ref: z.string().optional().nullable(),
+  direct_issue_justification: z.string().optional().nullable(),
+  quote_status: z.enum(['under_review', 'awaiting_client', 'client_approved', 'client_declined']).optional().nullable(),
+  client_approved_by: z.string().optional().nullable(),
+  client_approved_at: z.string().optional().nullable(),
+  client_decline_reason: z.string().optional().nullable(),
+  signoff_engineer_by: z.string().optional().nullable(),
+  signoff_engineer_at: z.string().optional().nullable(),
+  signoff_fm_by: z.string().optional().nullable(),
+  signoff_fm_at: z.string().optional().nullable(),
+  signoff_inspector_by: z.string().optional().nullable(),
+  signoff_inspector_at: z.string().optional().nullable(),
+  completion_cert_no: z.string().optional().nullable(),
+  client_recovery_invoice_no: z.string().optional().nullable(),
+  client_recovery_status: z.enum(['pending', 'submitted', 'recovered']).optional().nullable(),
+  signoff_rejection_reason: z.string().optional().nullable(),
+  assessor_role: z.enum(['works_engineer', 'works_inspector']).optional().nullable()
 });
 
 export const submitAssessmentSchema = z.object({
   assessment_type: z.enum(['offsite', 'onsite'], {
     required_error: 'Assessment mode is required (offsite or onsite)'
   }),
-  assessor_estimate: z.coerce.number().min(0, 'Assessor estimate must be at least R0'),
-  charge_code: z.enum(['PRE', 'ONS', 'TRV', 'FIN'], {
-    required_error: 'Valid charge code is required (PRE, ONS, TRV, FIN)'
+  assessor_role: z.enum(['works_engineer', 'works_inspector']).optional().default('works_engineer'),
+  assessor_estimate: z.coerce.number().min(0, 'Assessor estimate must be at least R0').optional().nullable(),
+  charge_code: z.enum(['PRE', 'ONS', 'TRV', 'EVI', 'FIN'], {
+    required_error: 'Valid charge code is required (PRE, ONS, TRV, EVI, FIN)'
   }),
-  assessment_notes: z.string().optional().nullable()
+  assessment_notes: z.string().optional().nullable(),
+  route_b_override: z.boolean().optional(),
+  refer_to_engineer: z.boolean().optional()
 });
 

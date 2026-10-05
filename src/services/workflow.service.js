@@ -48,7 +48,17 @@ export class WorkflowService {
   /**
    * Transitions a work order to a new status and creates a cryptographic status event
    */
-  static async transitionStatus({ workOrderId, targetStatus, actor, notes, assignedTo, contractorId, actualCost }) {
+  static async transitionStatus({
+    workOrderId,
+    targetStatus,
+    actor,
+    notes,
+    assignedTo,
+    contractorId,
+    actualCost,
+    contractorQuoteRef,
+    directIssueJustification
+  }) {
     const workOrder = await WorkOrderRepository.findById(workOrderId);
     if (!workOrder) {
       throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
@@ -139,7 +149,7 @@ export class WorkflowService {
       actor_id: actor.id,
       previous_hash: previousHash,
       current_hash: currentHash,
-      notes: notes || null,
+      notes: notes || directIssueJustification || null,
       created_at: timestamp
     });
 
@@ -150,6 +160,11 @@ export class WorkflowService {
       if (actualCost !== undefined) {
         updatePayload.estimated_cost = actualCost;
       }
+      if (!workOrder.system_quote_no) {
+        const year = new Date().getFullYear();
+        const seq = workOrder.tracking_number ? workOrder.tracking_number.replace(/\D/g, '').slice(-4) || '1001' : '1001';
+        updatePayload.system_quote_no = `QT-${year}-${seq.padStart(4, '0')}`;
+      }
     }
     if (targetStatus === WORK_ORDER_STATUS.ASSIGNED) {
       updatePayload.assigned_by = actor.id;
@@ -159,6 +174,12 @@ export class WorkflowService {
       } else if (contractorId) {
         updatePayload.contractor_id = contractorId;
         updatePayload.assigned_to = contractorId;
+      }
+      if (contractorQuoteRef) {
+        updatePayload.contractor_quote_ref = contractorQuoteRef;
+      }
+      if (directIssueJustification) {
+        updatePayload.direct_issue_justification = directIssueJustification;
       }
     }
     if (targetStatus !== WORK_ORDER_STATUS.APPROVED && actualCost !== undefined) {

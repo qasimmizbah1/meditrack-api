@@ -3,7 +3,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { catchAsync } from '../utils/catchAsync.js';
 
 export const transitionStatus = catchAsync(async (req, res) => {
-  const { status, notes, assigned_to, contractor_id, actual_cost } = req.body;
+  const { status, notes, assigned_to, contractor_id, actual_cost, contractor_quote_ref, direct_issue_justification } = req.body;
   const result = await WorkflowService.transitionStatus({
     workOrderId: req.params.id,
     targetStatus: status,
@@ -11,7 +11,9 @@ export const transitionStatus = catchAsync(async (req, res) => {
     notes,
     assignedTo: assigned_to,
     contractorId: contractor_id,
-    actualCost: actual_cost
+    actualCost: actual_cost,
+    contractorQuoteRef: contractor_quote_ref,
+    directIssueJustification: direct_issue_justification
   });
 
   return ApiResponse.success(res, result, `Status transitioned to ${status.toUpperCase()} successfully`);

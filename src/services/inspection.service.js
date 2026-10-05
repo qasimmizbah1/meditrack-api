@@ -58,6 +58,12 @@ export class InspectionService {
       throw AppError.notFound(`Work order with ID ${data.work_order_id} not found`);
     }
 
+    if (inspector.role === 'INSPECTOR' && inspector.inspector_scope === 'works_engineer') {
+      throw AppError.forbidden(
+        'Forbidden: Users with Works Engineer scope are restricted to scoping and estimates and cannot conduct final QC inspection sign-offs. Requires Works Inspector or Dual Scope.'
+      );
+    }
+
     // Work order must be completed (or in verification) to be inspected
     if (workOrder.status !== WORK_ORDER_STATUS.COMPLETED && workOrder.status !== WORK_ORDER_STATUS.VERIFIED) {
       throw AppError.badRequest(

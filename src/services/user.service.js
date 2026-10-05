@@ -21,6 +21,7 @@ export class UserService {
       passwordHash,
       role: data.role,
       approverScope: data.approver_scope || (data.role === 'APPROVER' ? 'general' : null),
+      inspectorScope: data.inspector_scope || (data.role === 'INSPECTOR' ? 'both' : null),
       roleId,
       phone: data.phone || null,
       facilityId: data.facility_id || null,
@@ -93,6 +94,9 @@ export class UserService {
     }
     if (updateData.approver_scope !== undefined) {
       payload.approver_scope = updateData.approver_scope;
+    }
+    if (updateData.inspector_scope !== undefined) {
+      payload.inspector_scope = updateData.inspector_scope;
     }
     if (updateData.phone !== undefined) payload.phone = updateData.phone;
     if (updateData.facility_id !== undefined) payload.facility_id = updateData.facility_id;

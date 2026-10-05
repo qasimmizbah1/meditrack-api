@@ -79,23 +79,105 @@ export class WorkOrderService {
       throw AppError.notFound(`Work order with ID ${id} not found`);
     }
 
-    const { assessment_type, assessor_estimate, charge_code, assessment_notes } = assessmentData;
+    if (currentUser.role !== 'INSPECTOR' && currentUser.role !== 'ADMIN') {
+      throw AppError.forbidden('Forbidden: Technical engineering assessments can only be submitted by Site Engineers or Site Inspectors.');
+    }
+    const {
+      assessment_type,
+      assessor_role,
+      assessor_estimate,
+      charge_code,
+      assessment_notes,
+      route_b_override,
+      refer_to_engineer
+    } = assessmentData;
+
+    // Handle Referral to Works Engineer by Inspector
+    if (refer_to_engineer) {
+      await WorkOrderRepository.update(id, {
+        assessment_type,
+        assessor_role: 'works_engineer',
+        assessor_id: currentUser.id,
+        assessor_estimate: null,
+        charge_code,
+        assessment_notes: assessment_notes || `Referred to Works Engineer by ${currentUser.name} for technical scope & cost estimation.`,
+        assessment_date: new Date().toISOString()
+      });
+
+      // Dispatch real-time alert/notification to Works Engineers
+      try {
+        const engineers = await UserRepository.findAll({ role: 'INSPECTOR' });
+        const targetEngineers = engineers.filter(
+          (u) => u.inspector_scope === 'works_engineer' || u.email === 'engineer@meditrack.com' || u.role === 'ADMIN'
+        );
+
+        for (const eng of targetEngineers) {
+          await NotificationService.sendNotification({
+            userId: eng.id,
+            title: `Technical Scope Estimation Requested: ${workOrder.tracking_number}`,
+            message: `${currentUser.name} (Site Inspector) referred ${workOrder.tracking_number} (${workOrder.title}) for detailed technical scoping and cost estimation.`,
+            type: 'warning',
+            link: `/work-orders/${id}`
+          });
+        }
+      } catch (notifyErr) {
+        console.warn('Failed to notify engineer:', notifyErr.message);
+      }
+
+      // Record Audit Event
+      try {
+        const lastEvent = await StatusEventRepository.getLastEvent(id);
+        const previousHash = lastEvent ? lastEvent.current_hash : GENESIS_HASH;
+        const timestamp = new Date().toISOString();
+        const currentHash = computeEventHash({
+          previousHash,
+          status: workOrder.status,
+          actorId: currentUser.id,
+          timestamp
+        });
+
+        const eventId = `evt_${crypto.randomBytes(8).toString('hex')}`;
+        await StatusEventRepository.create({
+          id: eventId,
+          work_order_id: id,
+          status: workOrder.status,
+          actor_id: currentUser.id,
+          previous_hash: previousHash,
+          current_hash: currentHash,
+          notes: `Technical Scoping Referred to Works Engineer by ${currentUser.name} (Site Inspector). Mode=${assessment_type.toUpperCase()}, ChargeCode=${charge_code}.${assessment_notes ? ` Notes: ${assessment_notes}` : ''}`,
+          created_at: timestamp
+        });
+      } catch (auditErr) {
+        console.warn('Failed to record referral audit event:', auditErr.message);
+      }
+
+      return await WorkOrderRepository.findById(id);
+    }
+
     const numericEstimate = Number(assessor_estimate) || 0;
 
     // Automated Funding Threshold Dispatcher:
-    // Route B (Advance Funded Float): <= R50,000 OR Critical 0–24h
-    // Route A (Client Funded / Formal Quote Approval): > R50,000
+    // Route B (Advance Funded Float): <= R50,000 OR Critical 0–24h OR QB Elects/Overrides (> R50k with reasoning note)
+    // Route A (Client Funded / Formal Quote Approval): > R50,000 (Default)
     let fundingRoute = 'route_b';
+    let isQbOverride = false;
+
     if (workOrder.urgency_category === 'Critical 0–24h') {
       fundingRoute = 'route_b';
     } else if (numericEstimate > 50000) {
-      fundingRoute = 'route_a';
+      if (route_b_override && assessment_notes && assessment_notes.trim().length > 0) {
+        fundingRoute = 'route_b';
+        isQbOverride = true;
+      } else {
+        fundingRoute = 'route_a';
+      }
     } else {
       fundingRoute = 'route_b';
     }
 
     await WorkOrderRepository.update(id, {
       assessment_type,
+      assessor_role: assessor_role || 'works_engineer',
       assessor_id: currentUser.id,
       assessor_estimate: numericEstimate,
       estimated_cost: numericEstimate,
@@ -118,7 +200,11 @@ export class WorkOrderService {
       });
 
       const eventId = `evt_${crypto.randomBytes(8).toString('hex')}`;
-      const routeLabel = fundingRoute === 'route_b' ? 'Route B (Advance Funded <= R50,000)' : 'Route A (Client Funded > R50,000)';
+      const routeLabel = isQbOverride
+        ? 'Route B (QB Special Override > R50,000 with recorded reasoning)'
+        : fundingRoute === 'route_b'
+        ? 'Route B (Advance Funded <= R50,000)'
+        : 'Route A (Client Funded > R50,000)';
 
       await StatusEventRepository.create({
         id: eventId,
@@ -186,8 +272,8 @@ export class WorkOrderService {
       mappedFundingRoute = 'route_a'; // Statutory scheduled maintenance with 30d/15d notice
     }
 
-    const isFastTrack = urgencyCategory !== '8+ days or statutory';
-    const initialStatus = isFastTrack ? WORK_ORDER_STATUS.APPROVED : WORK_ORDER_STATUS.REPORTED;
+    const isEmergencyBypass = urgencyCategory === 'Critical 0–24h';
+    const initialStatus = isEmergencyBypass ? WORK_ORDER_STATUS.APPROVED : WORK_ORDER_STATUS.REPORTED;
 
     const workOrder = await WorkOrderRepository.create({
       id,
@@ -202,15 +288,15 @@ export class WorkOrderService {
       funding_route: mappedFundingRoute,
       status: initialStatus,
       reported_by: currentUser.id,
-      approved_by: isFastTrack ? currentUser.id : null,
+      approved_by: isEmergencyBypass ? currentUser.id : null,
       estimated_cost: data.estimated_cost || 0,
       due_date: data.due_date || null
     });
 
     // Record Genesis Cryptographic Status Event
-    const genesisNote = urgencyCategory === '8+ days or statutory'
-      ? `8+ days or statutory work order created at ${facility.name} (${facility.code}) — 30d & 15d pre-notices queued for NC DOH & QB`
-      : `Fast-track work order (${urgencyCategory}) automatically approved under QB Route B facility agreement — Immediate specialist dispatch`;
+    const genesisNote = isEmergencyBypass
+      ? `Critical emergency work order (0–24h SLA) automatically fast-tracked under Advance Float agreement for immediate specialist dispatch`
+      : `Work order reported at ${facility.name} (${facility.code}) — Awaiting initial triage & approval by Facility Approver`;
 
     await WorkflowService.recordGenesisEvent(
       id,
@@ -265,7 +351,111 @@ export class WorkOrderService {
       throw AppError.notFound(`Work order with ID ${id} not found`);
     }
 
-    return WorkOrderRepository.update(id, updateData);
+    const payload = { ...updateData };
+
+    // Route A Quotation Lifecycle Management (PDF Page 4)
+    if (currentUser?.role === 'CONTRACTOR' && updateData.estimated_cost !== undefined) {
+      payload.quote_status = 'under_review';
+    }
+
+    // 3-Way Tri-Signature Completion Logic (PDF Page 5)
+    const hasEng = payload.signoff_engineer_by || workOrder.signoff_engineer_by;
+    const hasFm = payload.signoff_fm_by || workOrder.signoff_fm_by;
+    const hasInsp = payload.signoff_inspector_by || workOrder.signoff_inspector_by;
+
+    if (hasEng && hasFm && hasInsp && !workOrder.completion_cert_no && !payload.completion_cert_no) {
+      const year = new Date().getFullYear();
+      const numCode = workOrder.tracking_number ? workOrder.tracking_number.replace(/\D/g, '').slice(-4) : '1001';
+      payload.completion_cert_no = `CERT-${year}-${numCode || '1001'}`;
+    }
+
+    if (payload.client_recovery_status === 'submitted' && !workOrder.client_recovery_invoice_no && !payload.client_recovery_invoice_no) {
+      const year = new Date().getFullYear();
+      const numCode = workOrder.tracking_number ? workOrder.tracking_number.replace(/\D/g, '').slice(-4) : '1001';
+      payload.client_recovery_invoice_no = `REC-${year}-${numCode || '1001'}`;
+    }
+
+    const updated = await WorkOrderRepository.update(id, payload);
+
+    // If quote_status was updated, log audit trail event
+    if (payload.quote_status && payload.quote_status !== workOrder.quote_status) {
+      try {
+        const lastEvent = await StatusEventRepository.getLastEvent(id);
+        const previousHash = lastEvent ? lastEvent.current_hash : GENESIS_HASH;
+        const timestamp = new Date().toISOString();
+        const currentHash = computeEventHash({
+          previousHash,
+          status: workOrder.status,
+          actorId: currentUser ? currentUser.id : 'system',
+          timestamp
+        });
+
+        const statusLabel =
+          payload.quote_status === 'under_review'
+            ? 'Contractor Quote Submitted — Under Review by Quantum Built'
+            : payload.quote_status === 'awaiting_client'
+            ? 'Quote Approved by Quantum Built — Submitted to NC DOH (Client Gateway)'
+            : payload.quote_status === 'client_approved'
+            ? 'Client Approved: Quote Approved by NC DOH — Ready for Work Order Issue'
+            : 'Quote Declined by Client — Returned to Quantum Built for Renegotiation';
+
+        await StatusEventRepository.create({
+          id: `evt_${crypto.randomBytes(8).toString('hex')}`,
+          work_order_id: id,
+          status: workOrder.status,
+          actor_id: currentUser ? currentUser.id : 'system',
+          previous_hash: previousHash,
+          current_hash: currentHash,
+          notes: `${statusLabel}${payload.client_decline_reason ? ` (Reason: ${payload.client_decline_reason})` : ''}`,
+          created_at: timestamp
+        });
+      } catch (evtErr) {
+        console.warn('Failed to record quote lifecycle audit event:', evtErr.message);
+      }
+    }
+
+    // If 3-way sign-off was recorded, log audit trail event
+    const signoffEvent =
+      payload.signoff_engineer_by && !workOrder.signoff_engineer_by
+        ? `3-Way Sign-off: Works Engineer Technical Sign-off by ${payload.signoff_engineer_by}`
+        : payload.signoff_fm_by && !workOrder.signoff_fm_by
+        ? `3-Way Sign-off: Facilities Manager Hospital Site Sign-off by ${payload.signoff_fm_by}`
+        : payload.signoff_inspector_by && !workOrder.signoff_inspector_by
+        ? `3-Way Sign-off: Works Inspector Compliance Sign-off by ${payload.signoff_inspector_by}`
+        : payload.signoff_rejection_reason && !workOrder.signoff_rejection_reason
+        ? `3-Way Sign-off Rejected: Returned to In Progress for Rework (Reason: ${payload.signoff_rejection_reason})`
+        : payload.client_recovery_status === 'submitted' && workOrder.client_recovery_status !== 'submitted'
+        ? `NC DOH Client Recovery Invoice Generated (${payload.client_recovery_invoice_no || 'REC-INVOICE'}) with attached Completion Certificate`
+        : null;
+
+    if (signoffEvent) {
+      try {
+        const lastEvent = await StatusEventRepository.getLastEvent(id);
+        const previousHash = lastEvent ? lastEvent.current_hash : GENESIS_HASH;
+        const timestamp = new Date().toISOString();
+        const currentHash = computeEventHash({
+          previousHash,
+          status: workOrder.status,
+          actorId: currentUser ? currentUser.id : 'system',
+          timestamp
+        });
+
+        await StatusEventRepository.create({
+          id: `evt_${crypto.randomBytes(8).toString('hex')}`,
+          work_order_id: id,
+          status: workOrder.status,
+          actor_id: currentUser ? currentUser.id : 'system',
+          previous_hash: previousHash,
+          current_hash: currentHash,
+          notes: signoffEvent,
+          created_at: timestamp
+        });
+      } catch (evtErr) {
+        console.warn('Failed to record signoff audit event:', evtErr.message);
+      }
+    }
+
+    return updated;
   }
 
   static async uploadPhotos(id, currentUser, files, stage = 'in_progress', caption = '') {
@@ -294,5 +484,25 @@ export class WorkOrderService {
     }
 
     return savedPhotos;
+  }
+
+  static async deleteWorkOrder(id, currentUser) {
+    if (currentUser.role !== 'ADMIN') {
+      throw AppError.forbidden('Only Administrators can delete work orders');
+    }
+    const workOrder = await WorkOrderRepository.findById(id);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${id} not found`);
+    }
+    await WorkOrderRepository.deleteById(id);
+    return { success: true, message: `Work order ${workOrder.tracking_number} deleted successfully` };
+  }
+
+  static async clearAllWorkOrders(currentUser) {
+    if (currentUser.role !== 'ADMIN') {
+      throw AppError.forbidden('Only Administrators can clear all test work orders');
+    }
+    await WorkOrderRepository.clearAll();
+    return { success: true, message: 'All test work orders, invoices, inspections, and audit events cleared successfully' };
   }
 }
