@@ -98,6 +98,13 @@ export class InspectionService {
 
     // Execute Status Workflow Transition with SHA-256 Audit Event
     if (data.result === INSPECTION_STATUS.PASS) {
+      const isTriSignoffComplete = !!(workOrder.signoff_engineer_by && workOrder.signoff_fm_by && workOrder.signoff_inspector_by);
+      if (!isTriSignoffComplete) {
+        throw AppError.badRequest(
+          'Cannot verify work order: 3-Way Statutory Sign-off is pending. Works Engineer, Facilities Manager, and Works Inspector must all sign off before final verification.'
+        );
+      }
+
       await WorkflowService.transitionStatus({
         workOrderId: data.work_order_id,
         targetStatus: WORK_ORDER_STATUS.VERIFIED,

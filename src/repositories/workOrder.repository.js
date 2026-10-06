@@ -30,6 +30,8 @@ export class WorkOrderRepository {
              u.email as reported_by_email,
              COALESCE(c.name, ua.name) as assigned_to_name,
              c.name as contractor_name,
+             ulead.name as lead_assessor_name,
+             ureqeng.name as assessor_request_engineer_name,
              inv.id as invoice_id,
              inv.invoice_number,
              inv.status as invoice_status,
@@ -39,6 +41,8 @@ export class WorkOrderRepository {
       LEFT JOIN facilities f ON wo.facility_id = f.id
       LEFT JOIN users u ON wo.reported_by = u.id
       LEFT JOIN users ua ON wo.assigned_to = ua.id
+      LEFT JOIN users ulead ON wo.lead_assessor_id = ulead.id
+      LEFT JOIN users ureqeng ON wo.assessor_request_engineer_id = ureqeng.id
       LEFT JOIN contractors c ON wo.contractor_id = c.id OR wo.assigned_to = c.id
       LEFT JOIN invoices inv ON inv.work_order_id = wo.id
       WHERE 1=1
@@ -139,6 +143,10 @@ export class WorkOrderRepository {
               COALESCE(c.email, ua.email) as assigned_to_email,
               uass.name as assessor_name,
               uass.email as assessor_email,
+              ulead.name as lead_assessor_name,
+              ulead.email as lead_assessor_email,
+              ureqeng.name as assessor_request_engineer_name,
+              ureqeng.email as assessor_request_engineer_email,
               c.name as contractor_name,
               inv.id as invoice_id,
               inv.invoice_number,
@@ -149,6 +157,8 @@ export class WorkOrderRepository {
        LEFT JOIN users u ON wo.reported_by = u.id
        LEFT JOIN users ua ON wo.assigned_to = ua.id
        LEFT JOIN users uass ON wo.assessor_id = uass.id
+       LEFT JOIN users ulead ON wo.lead_assessor_id = ulead.id
+       LEFT JOIN users ureqeng ON wo.assessor_request_engineer_id = ureqeng.id
        LEFT JOIN contractors c ON wo.contractor_id = c.id OR wo.assigned_to = c.id
        LEFT JOIN invoices inv ON inv.work_order_id = wo.id
        WHERE wo.id = ? LIMIT 1`,

@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import db from '../database/db.js';
+import { computeEventHash, GENESIS_HASH } from '../utils/crypto.js';
 
-export const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+export { GENESIS_HASH };
 
 export class StatusEventRepository {
   static async getLatestEventByWorkOrderId(workOrderId) {
@@ -12,6 +14,10 @@ export class StatusEventRepository {
       [workOrderId]
     );
     return rows[0] || null;
+  }
+
+  static async getLastEvent(workOrderId) {
+    return this.getLatestEventByWorkOrderId(workOrderId);
   }
 
   static async getEventsByWorkOrderId(workOrderId) {
@@ -27,6 +33,51 @@ export class StatusEventRepository {
       [workOrderId]
     );
     return rows;
+  }
+
+  static async recordEvent({
+    workOrderId,
+    status,
+    actorId,
+    notes = null,
+    metadata = null,
+    createdAt = null
+  }) {
+    const lastEvent = await this.getLatestEventByWorkOrderId(workOrderId);
+    const previousHash = lastEvent ? lastEvent.current_hash : GENESIS_HASH;
+    const timestamp = createdAt || new Date().toISOString();
+    const currentHash = computeEventHash({
+      previousHash,
+      status,
+      actorId: actorId || 'system',
+      timestamp
+    });
+
+    const eventId = `evt_${crypto.randomBytes(8).toString('hex')}`;
+
+    await this.create({
+      id: eventId,
+      work_order_id: workOrderId,
+      status,
+      actor_id: actorId || 'system',
+      previous_hash: previousHash,
+      current_hash: currentHash,
+      notes,
+      metadata,
+      created_at: timestamp
+    });
+
+    return {
+      id: eventId,
+      work_order_id: workOrderId,
+      status,
+      actor_id: actorId,
+      previous_hash: previousHash,
+      current_hash: currentHash,
+      notes,
+      metadata,
+      created_at: timestamp
+    };
   }
 
   static async create({
@@ -58,3 +109,4 @@ export class StatusEventRepository {
     return rows[0];
   }
 }
+

@@ -17,6 +17,26 @@ export const submitAssessment = catchAsync(async (req, res) => {
   return ApiResponse.success(res, workOrder, 'Engineering assessment submitted successfully');
 });
 
+export const assignLeadAssessor = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.assignLeadAssessor(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Lead Assessor assigned successfully');
+});
+
+export const requestEngineer = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.requestEngineer(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Engineer requested successfully from Quantum Built');
+});
+
+export const handleEngineerRequest = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.handleEngineerRequest(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Engineer request processed successfully');
+});
+
+export const reviewEstimate = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.reviewEstimate(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Estimate review decision recorded successfully');
+});
+
 export const createWorkOrder = catchAsync(async (req, res) => {
   const workOrder = await WorkOrderService.createWorkOrder(req.body, req.user, req.files);
   return ApiResponse.created(res, workOrder, 'Work order reported successfully');

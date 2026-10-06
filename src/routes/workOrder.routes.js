@@ -6,6 +6,10 @@ import {
   updateWorkOrder,
   uploadWorkOrderPhotos,
   submitAssessment,
+  assignLeadAssessor,
+  requestEngineer,
+  handleEngineerRequest,
+  reviewEstimate,
   deleteWorkOrder,
   clearAllWorkOrders
 } from '../controllers/workOrder.controller.js';
@@ -46,6 +50,30 @@ router.post(
   '/:id/assessment',
   validate(submitAssessmentSchema),
   submitAssessment
+);
+
+// Part 1: Quantum Built Assigns Lead Assessor
+router.post(
+  '/:id/assign-lead-assessor',
+  assignLeadAssessor
+);
+
+// Part 1: Lead Inspector Requests Engineer from Quantum Built
+router.post(
+  '/:id/request-engineer',
+  requestEngineer
+);
+
+// Part 1: Quantum Built Fulfills or Declines Engineer Request
+router.post(
+  '/:id/handle-engineer-request',
+  handleEngineerRequest
+);
+
+// Part 1: Quantum Built 3-Way Estimate Review (Approve / Adjust / Reject)
+router.post(
+  '/:id/review-estimate',
+  reviewEstimate
 );
 
 // Workflow Status Transition (Immutable event & SHA-256 hash generation)

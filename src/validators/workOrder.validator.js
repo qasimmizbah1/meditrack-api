@@ -55,7 +55,17 @@ export const updateWorkOrderSchema = createWorkOrderSchema.partial().extend({
   client_recovery_invoice_no: z.string().optional().nullable(),
   client_recovery_status: z.enum(['pending', 'submitted', 'recovered']).optional().nullable(),
   signoff_rejection_reason: z.string().optional().nullable(),
-  assessor_role: z.enum(['works_engineer', 'works_inspector']).optional().nullable()
+  assessor_role: z.enum(['works_engineer', 'works_inspector']).optional().nullable(),
+  timesheet_data: z.string().optional().nullable(),
+  timesheet_total_hours: z.coerce.number().min(0).optional().nullable(),
+  timesheet_submitted_by: z.string().optional().nullable(),
+  timesheet_submitted_at: z.string().optional().nullable(),
+  assessor_estimate: z.coerce.number().min(0).optional().nullable(),
+  charge_code: z.enum(['PRE', 'ONS', 'TRV', 'EVI', 'FIN']).optional().nullable(),
+  assessment_notes: z.string().optional().nullable(),
+  assessment_date: z.string().optional().nullable(),
+  assessment_hours: z.coerce.number().min(0).optional().nullable(),
+  estimated_days: z.coerce.number().min(0).optional().nullable()
 });
 
 export const submitAssessmentSchema = z.object({
@@ -67,6 +77,9 @@ export const submitAssessmentSchema = z.object({
   charge_code: z.enum(['PRE', 'ONS', 'TRV', 'EVI', 'FIN'], {
     required_error: 'Valid charge code is required (PRE, ONS, TRV, EVI, FIN)'
   }),
+  assessment_hours: z.coerce.number().min(0).optional().nullable(),
+  estimated_days: z.coerce.number().min(0).optional().nullable(),
+  due_date: z.string().optional().nullable(),
   assessment_notes: z.string().optional().nullable(),
   route_b_override: z.boolean().optional(),
   refer_to_engineer: z.boolean().optional()

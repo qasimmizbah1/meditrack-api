@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { InvoiceRepository } from '../repositories/invoice.repository.js';
 import { WorkOrderRepository } from '../repositories/workOrder.repository.js';
 import { ContractorRepository } from '../repositories/contractor.repository.js';
+import { StatusEventRepository } from '../repositories/statusEvent.repository.js';
 import { WorkflowService } from './workflow.service.js';
 import { AppError } from '../utils/AppError.js';
 import { WORK_ORDER_STATUS, INVOICE_STATUS } from '../config/constants.js';
@@ -53,11 +54,19 @@ export class InvoiceService {
       throw new AppError('Associated Work Order not found', 404);
     }
 
-    // Business Rule: Invoicing only allowed on verified or closed work orders
+    // Business Rule: Invoicing only allowed on verified or closed work orders with complete 3-Way Sign-off
     const validStatuses = [WORK_ORDER_STATUS.VERIFIED, WORK_ORDER_STATUS.CLOSED];
     if (!validStatuses.includes(workOrder.status)) {
       throw new AppError(
         `Cannot invoice work order in '${workOrder.status}' status. Work order must be verified by QC inspector first.`,
+        400
+      );
+    }
+
+    const isTriSignoffComplete = !!(workOrder.signoff_engineer_by && workOrder.signoff_fm_by && workOrder.signoff_inspector_by);
+    if (!isTriSignoffComplete) {
+      throw new AppError(
+        'Cannot generate invoice claim: 3-Way Statutory Sign-off is incomplete. Works Engineer, Facilities Manager, and Works Inspector must all sign off first.',
         400
       );
     }
@@ -100,6 +109,18 @@ export class InvoiceService {
       pdf_url: null
     });
 
+    // Record status event for work order timeline
+    try {
+      await StatusEventRepository.recordEvent({
+        workOrderId: data.work_order_id,
+        status: 'invoice_submitted',
+        actorId: actorUser?.id || contractorId || 'system',
+        notes: `Contractor Invoice Claim [${invoice_number}] submitted for R ${total_amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} with linked Completion Certificate.`
+      });
+    } catch (auditErr) {
+      console.warn('Failed to record invoice submission audit event:', auditErr.message);
+    }
+
     // Notify Approvers and Admins about new invoice claim
     try {
       const approvers = await UserRepository.findAll({ role: 'APPROVER' });
@@ -110,7 +131,7 @@ export class InvoiceService {
         await NotificationService.sendNotification({
           userId: recipient.id,
           title: `New Invoice Submitted: ${invoice_number}`,
-          message: `${contractor?.name || 'Contractor'} submitted invoice ${invoice_number} for ${workOrder.tracking_number} ($${total_amount.toLocaleString()}). Action Required: Review and approve disbursement.`,
+          message: `${contractor?.name || 'Contractor'} submitted invoice ${invoice_number} for ${workOrder.tracking_number} (R ${total_amount.toLocaleString('en-ZA')}). Action Required: Review and approve disbursement.`,
           type: 'invoice',
           link: `/invoices`
         });
@@ -159,6 +180,20 @@ export class InvoiceService {
       status,
       notes: notes || invoice.notes
     });
+
+    // Record invoice approval event in work order audit timeline
+    if (status === INVOICE_STATUS.APPROVED && invoice.work_order_id) {
+      try {
+        await StatusEventRepository.recordEvent({
+          workOrderId: invoice.work_order_id,
+          status: 'invoice_approved',
+          actorId: actorUser?.id || 'system',
+          notes: `Contractor Invoice Claim [${invoice.invoice_number}] (R ${Number(invoice.total_amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}) approved by Quantum Built Finance (${actorUser?.name || 'Approver'}).`
+        });
+      } catch (auditErr) {
+        console.warn('Failed to record invoice approval audit event:', auditErr.message);
+      }
+    }
 
     // Notify Contractor regarding invoice status change
     try {
