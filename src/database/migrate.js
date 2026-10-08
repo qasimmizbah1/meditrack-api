@@ -6,7 +6,7 @@ import db, { getDb } from './db.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function runMigrations() {
+export async function runMigrations() {
   try {
     console.log('🔄 Checking database migrations...');
 
@@ -53,8 +53,11 @@ async function runMigrations() {
     console.log('✨ All migrations are up to date.');
   } catch (error) {
     console.error('❌ Migration error:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-runMigrations();
+// Auto-run if executed directly via CLI
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  runMigrations().catch(() => process.exit(1));
+}

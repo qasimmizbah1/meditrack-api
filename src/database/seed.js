@@ -4,7 +4,7 @@ import db from './db.js';
 import { ROLES, WORK_ORDER_PRIORITY, WORK_ORDER_STATUS, CONTRACTOR_COMPLIANCE_STATUS } from '../config/constants.js';
 import { computeEventHash, GENESIS_HASH } from '../utils/crypto.js';
 
-async function seedDatabase() {
+export async function seedDatabase() {
   try {
     console.log('🌱 Starting Database Seeding...');
 
@@ -431,8 +431,11 @@ async function seedDatabase() {
 
   } catch (error) {
     console.error('❌ Seeding failed:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-seedDatabase();
+// Auto-run if executed directly via CLI
+if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
+  seedDatabase().catch(() => process.exit(1));
+}
