@@ -58,6 +58,37 @@ export class WorkOrderService {
       ContractorQuotationRepository.findByWorkOrderId(id)
     ]);
 
+    // Auto-generate invoice for closed work order if not created yet
+    if (workOrder.status === 'closed' && !workOrder.invoice_id) {
+      try {
+        const invId = crypto.randomUUID();
+        const invoiceNumber = await InvoiceRepository.generateNextInvoiceNumber();
+        const contractorId = workOrder.contractor_id || workOrder.assigned_to || 'usr_contractor_01';
+        const amount = Number(workOrder.actual_cost || workOrder.estimated_cost || 0);
+
+        const newInv = await InvoiceRepository.create({
+          id: invId,
+          invoice_number: invoiceNumber,
+          work_order_id: id,
+          contractor_id: contractorId,
+          amount: amount,
+          tax_amount: 0,
+          total_amount: amount,
+          status: 'pending',
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          notes: `Auto-generated contractor invoice claim for approved work order [${workOrder.tracking_number}] - ${workOrder.title}`,
+          pdf_url: null
+        });
+
+        workOrder.invoice_id = newInv.id;
+        workOrder.invoice_number = newInv.invoice_number;
+        workOrder.invoice_status = newInv.status;
+        workOrder.invoice_total_amount = newInv.total_amount;
+      } catch (e) {
+        console.warn('Auto-invoice creation in getWorkOrderById failed:', e.message);
+      }
+    }
+
     // Blind Quoting Governance:
     // If currentUser is CONTRACTOR, assessor_estimate, assessment_notes, internal estimated_cost, and itemized cost rates are redacted.
     const isContractor = currentUser && (currentUser.role === 'CONTRACTOR' || currentUser.role === 'contractor');
@@ -1126,28 +1157,30 @@ export class WorkOrderService {
     return await WorkOrderRepository.findById(workOrderId);
   }
 
-  static async reviewContractorRecommendation(workOrderId, { action, notes }, currentUser) {
+  static async reviewContractorRecommendation(workOrderId, { action, quoteId, notes }, currentUser) {
     const workOrder = await WorkOrderRepository.findById(workOrderId);
     if (!workOrder) {
       throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
     }
 
     if (action === 'approved') {
-      if (!workOrder.selected_contractor_quote_id) {
-        throw AppError.badRequest('No contractor quote currently recommended by Works Engineer to approve');
+      const targetQuoteId = quoteId || workOrder.selected_contractor_quote_id;
+      if (!targetQuoteId) {
+        throw AppError.badRequest('No contractor quote selected or recommended to approve');
       }
 
-      const quote = await ContractorQuotationRepository.findById(workOrder.selected_contractor_quote_id);
+      const quote = await ContractorQuotationRepository.findById(targetQuoteId);
       if (!quote) {
-        throw AppError.notFound('Recommended quote not found');
+        throw AppError.notFound('Contractor quote not found');
       }
 
       await ContractorQuotationRepository.updateStatus(quote.id, 'assigned');
       await ContractorQuotationRepository.updateAllStatusForWorkOrderExcept(workOrderId, quote.id, 'rejected');
 
       await WorkOrderRepository.update(workOrderId, {
+        selected_contractor_quote_id: quote.id,
         contractor_approver_action: 'approved',
-        contractor_approver_notes: notes || 'Contractor recommendation approved by Procurement Approver',
+        contractor_approver_notes: notes || 'Contractor quotation approved and assigned by Procurement Approver',
         contractor_approver_by: currentUser.name,
         contractor_approver_at: new Date().toISOString(),
         assigned_to: quote.contractor_id,
@@ -1178,6 +1211,30 @@ export class WorkOrderService {
         console.warn('Failed to notify assigned contractor:', notifErr.message);
       }
 
+      return await WorkOrderRepository.findById(workOrderId);
+    } else if (action === 'reject_quote' || action === 'rejected') {
+      const targetQuoteId = quoteId || workOrder.selected_contractor_quote_id;
+      if (!targetQuoteId) {
+        throw AppError.badRequest('No contractor quote specified to reject');
+      }
+      const quote = await ContractorQuotationRepository.findById(targetQuoteId);
+      if (!quote) {
+        throw AppError.notFound('Contractor quote not found');
+      }
+      await ContractorQuotationRepository.updateStatus(quote.id, 'rejected');
+      if (workOrder.selected_contractor_quote_id === quote.id) {
+        await WorkOrderRepository.update(workOrderId, {
+          selected_contractor_quote_id: null
+        });
+      }
+      try {
+        await StatusEventRepository.recordEvent({
+          workOrderId,
+          status: 'quote_rejected',
+          actorId: currentUser.id,
+          notes: `Quotation from ${quote.contractor_name} (R ${Number(quote.amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}) rejected by ${currentUser.name}.${notes ? ` Reason: ${notes}` : ''}`
+        });
+      } catch (_) {}
       return await WorkOrderRepository.findById(workOrderId);
     } else if (action === 'reevaluate') {
       const now = new Date().toISOString();

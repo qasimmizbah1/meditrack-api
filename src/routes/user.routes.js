@@ -16,8 +16,8 @@ const router = Router();
 // Protect all user management routes - require JWT authentication
 router.use(authenticateJWT);
 
-router.get('/', authorizeRoles(ROLES.ADMIN, ROLES.APPROVER, ROLES.AUDITOR), getUsers);
-router.get('/:id', authorizeRoles(ROLES.ADMIN, ROLES.APPROVER, ROLES.AUDITOR), getUserById);
+router.get('/', authorizeRoles(ROLES.ADMIN, ROLES.APPROVER, ROLES.AUDITOR, ROLES.INSPECTOR), getUsers);
+router.get('/:id', authorizeRoles(ROLES.ADMIN, ROLES.APPROVER, ROLES.AUDITOR, ROLES.INSPECTOR), getUserById);
 router.post('/', authorizeRoles(ROLES.ADMIN), validate(createUserSchema), createUser);
 router.patch('/:id', authorizeRoles(ROLES.ADMIN), validate(updateUserSchema), updateUser);
 router.delete('/:id', authorizeRoles(ROLES.ADMIN), deleteUser);

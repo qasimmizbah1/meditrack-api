@@ -25,9 +25,46 @@ export class ContractorQuotationRepository {
     return rows[0] || null;
   }
 
+  static async findByWorkOrderAndContractor(workOrderId, contractorId) {
+    const sql = `
+      SELECT cq.*, u.name as contractor_name, u.email as contractor_email
+      FROM contractor_quotations cq
+      LEFT JOIN users u ON cq.contractor_id = u.id
+      WHERE cq.work_order_id = ? AND cq.contractor_id = ?
+      LIMIT 1
+    `;
+    const { rows } = await db.query(sql, [workOrderId, contractorId]);
+    return rows[0] || null;
+  }
+
   static async create({ work_order_id, contractor_id, contractor_name, quote_ref, amount, breakdown, notes }) {
-    const id = `cq_${crypto.randomBytes(8).toString('hex')}`;
+    const existing = await this.findByWorkOrderAndContractor(work_order_id, contractor_id);
     const now = new Date().toISOString();
+
+    if (existing) {
+      // Update existing quotation for this contractor on this work order
+      const sql = `
+        UPDATE contractor_quotations SET
+          amount = ?,
+          quote_ref = ?,
+          breakdown = ?,
+          notes = ?,
+          status = 'submitted',
+          updated_at = ?
+        WHERE id = ?
+      `;
+      await db.query(sql, [
+        Number(amount) || 0,
+        quote_ref || null,
+        breakdown ? JSON.stringify(breakdown) : null,
+        notes || null,
+        now,
+        existing.id
+      ]);
+      return this.findById(existing.id);
+    }
+
+    const id = `cq_${crypto.randomBytes(8).toString('hex')}`;
     const sql = `
       INSERT INTO contractor_quotations (
         id, work_order_id, contractor_id, contractor_name, quote_ref, amount, breakdown, notes, status, created_at, updated_at
