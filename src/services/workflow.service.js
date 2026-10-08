@@ -204,7 +204,43 @@ export class WorkflowService {
 
     const updatedWorkOrder = await WorkOrderRepository.update(workOrderId, updatePayload);
 
-    // Auto-generate Contractor Invoice Claim upon Final Work Order Approval & Closure
+    // Auto-generate Contractor Invoice Claim upon Verification
+    if (targetStatus === WORK_ORDER_STATUS.VERIFIED) {
+      try {
+        const existingInv = await InvoiceRepository.findByWorkOrderId(workOrderId);
+        if (!existingInv) {
+          const invId = crypto.randomUUID();
+          const invoiceNumber = await InvoiceRepository.generateNextInvoiceNumber();
+          const contractorId = updatedWorkOrder.contractor_id || updatedWorkOrder.assigned_to || workOrder.contractor_id || workOrder.assigned_to || 'usr_contractor_01';
+          const amount = Number(updatedWorkOrder.actual_cost || updatedWorkOrder.estimated_cost || workOrder.actual_cost || workOrder.estimated_cost || 0);
+
+          await InvoiceRepository.create({
+            id: invId,
+            invoice_number: invoiceNumber,
+            work_order_id: workOrderId,
+            contractor_id: contractorId,
+            amount: amount,
+            tax_amount: 0,
+            total_amount: amount,
+            status: 'pending',
+            due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            notes: `Auto-generated contractor claim for verified work order [${updatedWorkOrder.tracking_number || workOrder.tracking_number}] - ${updatedWorkOrder.title || workOrder.title}`,
+            pdf_url: null
+          });
+
+          await StatusEventRepository.recordEvent({
+            workOrderId,
+            status: 'invoice_submitted',
+            actorId: actor ? actor.id : 'system',
+            notes: `Work order verified. Contractor Invoice [${invoiceNumber}] automatically generated for R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}.`
+          });
+        }
+      } catch (invErr) {
+        console.warn('Auto-invoice creation on verified status skipped:', invErr.message);
+      }
+    }
+
+    // Auto-generate or settle Contractor Invoice Claim upon Final Work Order Approval & Closure
     if (targetStatus === WORK_ORDER_STATUS.CLOSED) {
       try {
         const existingInv = await InvoiceRepository.findByWorkOrderId(workOrderId);
