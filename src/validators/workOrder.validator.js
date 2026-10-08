@@ -13,12 +13,7 @@ export const createWorkOrderSchema = z.object({
     WORK_ORDER_PRIORITY.HIGH,
     WORK_ORDER_PRIORITY.CRITICAL
   ]).default(WORK_ORDER_PRIORITY.MEDIUM),
-  urgency_category: z.enum([
-    'Critical 0–24h',
-    'Very urgent 2–4 days',
-    'Urgent 4–8 days',
-    '8+ days or statutory'
-  ]).default('Urgent 4–8 days').optional().nullable(),
+  urgency_category: z.string().optional().nullable(),
   funding_route: z.enum(['route_a', 'route_b']).optional().nullable(),
   estimated_cost: z.coerce.number().min(0).optional().nullable(),
   due_date: z.string().optional().nullable()

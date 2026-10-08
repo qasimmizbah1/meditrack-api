@@ -558,22 +558,41 @@ export class WorkOrderService {
     const id = `wo_${crypto.randomBytes(8).toString('hex')}`;
     const trackingNumber = await WorkOrderRepository.generateNextTrackingNumber();
 
-    const urgencyCategory = data.urgency_category || 'Urgent 4–8 days';
+    const rawUrgency = (data.urgency_category || '').trim();
+    let urgencyCategory = 'Urgent 4–8 days';
     let mappedPriority = data.priority || 'medium';
     let mappedFundingRoute = data.funding_route || 'route_b';
 
-    if (urgencyCategory === 'Critical 0–24h') {
+    if (
+      rawUrgency.toLowerCase().includes('critical') ||
+      rawUrgency.toLowerCase().includes('0-24') ||
+      rawUrgency.toLowerCase().includes('0–24') ||
+      data.priority === 'critical'
+    ) {
+      urgencyCategory = 'Critical 0–24h';
       mappedPriority = 'critical';
-      mappedFundingRoute = 'route_b'; // Bypasses statutory notice & standard quote sourcing
-    } else if (urgencyCategory === 'Very urgent 2–4 days') {
+      mappedFundingRoute = 'route_b';
+    } else if (
+      rawUrgency.toLowerCase().includes('very urgent') ||
+      rawUrgency.toLowerCase().includes('2-4') ||
+      rawUrgency.toLowerCase().includes('2–4') ||
+      data.priority === 'high'
+    ) {
+      urgencyCategory = 'Very urgent 2–4 days';
       mappedPriority = 'high';
-      mappedFundingRoute = 'route_b'; // Fast-track bypass
-    } else if (urgencyCategory === 'Urgent 4–8 days') {
-      mappedPriority = 'medium';
-      mappedFundingRoute = 'route_b'; // Fast-track bypass
-    } else if (urgencyCategory === '8+ days or statutory') {
+      mappedFundingRoute = 'route_b';
+    } else if (
+      rawUrgency.toLowerCase().includes('8+') ||
+      rawUrgency.toLowerCase().includes('statutory') ||
+      data.priority === 'low'
+    ) {
+      urgencyCategory = '8+ days or statutory';
       mappedPriority = 'low';
-      mappedFundingRoute = 'route_a'; // Statutory scheduled maintenance with 30d/15d notice
+      mappedFundingRoute = 'route_a';
+    } else {
+      urgencyCategory = 'Urgent 4–8 days';
+      mappedPriority = 'medium';
+      mappedFundingRoute = 'route_b';
     }
 
     const isEmergencyBypass = urgencyCategory === 'Critical 0–24h';
