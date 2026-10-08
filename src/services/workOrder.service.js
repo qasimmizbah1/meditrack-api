@@ -58,34 +58,43 @@ export class WorkOrderService {
       ContractorQuotationRepository.findByWorkOrderId(id)
     ]);
 
-    // Auto-generate invoice for closed work order if not created yet
-    if (workOrder.status === 'closed' && !workOrder.invoice_id) {
-      try {
-        const invId = crypto.randomUUID();
-        const invoiceNumber = await InvoiceRepository.generateNextInvoiceNumber();
-        const contractorId = workOrder.contractor_id || workOrder.assigned_to || 'usr_contractor_01';
-        const amount = Number(workOrder.actual_cost || workOrder.estimated_cost || 0);
+    // Auto-generate or settle invoice for closed work order
+    if (workOrder.status === 'closed') {
+      if (!workOrder.invoice_id) {
+        try {
+          const invId = crypto.randomUUID();
+          const invoiceNumber = await InvoiceRepository.generateNextInvoiceNumber();
+          const contractorId = workOrder.contractor_id || workOrder.assigned_to || 'usr_contractor_01';
+          const amount = Number(workOrder.actual_cost || workOrder.estimated_cost || 0);
 
-        const newInv = await InvoiceRepository.create({
-          id: invId,
-          invoice_number: invoiceNumber,
-          work_order_id: id,
-          contractor_id: contractorId,
-          amount: amount,
-          tax_amount: 0,
-          total_amount: amount,
-          status: 'pending',
-          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          notes: `Auto-generated contractor invoice claim for approved work order [${workOrder.tracking_number}] - ${workOrder.title}`,
-          pdf_url: null
-        });
+          const newInv = await InvoiceRepository.create({
+            id: invId,
+            invoice_number: invoiceNumber,
+            work_order_id: id,
+            contractor_id: contractorId,
+            amount: amount,
+            tax_amount: 0,
+            total_amount: amount,
+            status: 'paid',
+            due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            notes: `Auto-generated contractor invoice claim for approved work order [${workOrder.tracking_number}] - ${workOrder.title}`,
+            pdf_url: null
+          });
 
-        workOrder.invoice_id = newInv.id;
-        workOrder.invoice_number = newInv.invoice_number;
-        workOrder.invoice_status = newInv.status;
-        workOrder.invoice_total_amount = newInv.total_amount;
-      } catch (e) {
-        console.warn('Auto-invoice creation in getWorkOrderById failed:', e.message);
+          workOrder.invoice_id = newInv.id;
+          workOrder.invoice_number = newInv.invoice_number;
+          workOrder.invoice_status = 'paid';
+          workOrder.invoice_total_amount = newInv.total_amount;
+        } catch (e) {
+          console.warn('Auto-invoice creation in getWorkOrderById failed:', e.message);
+        }
+      } else if (workOrder.invoice_status !== 'paid') {
+        try {
+          await InvoiceRepository.updateStatus(workOrder.invoice_id, 'paid');
+          workOrder.invoice_status = 'paid';
+        } catch (e) {
+          console.warn('Invoice payment status update failed:', e.message);
+        }
       }
     }
 
@@ -452,6 +461,7 @@ export class WorkOrderService {
     }
 
     const numericEstimatedDays = estimated_days !== undefined && estimated_days !== '' && Number(estimated_days) > 0 ? Number(estimated_days) : (workOrder.estimated_days || 3);
+    let calculatedDueDate = due_date || null;
     if (!calculatedDueDate && numericEstimatedDays > 0) {
       calculatedDueDate = new Date(Date.now() + numericEstimatedDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     }
@@ -839,7 +849,9 @@ export class WorkOrderService {
       contractor_critical_quote_cost: numericCost,
       contractor_critical_quote_breakdown: breakdownStr,
       contractor_critical_quote_status: 'submitted',
-      contractor_critical_quote_submitted_at: new Date().toISOString()
+      contractor_critical_quote_submitted_at: new Date().toISOString(),
+      actual_cost: numericCost,
+      estimated_cost: (workOrder.estimated_cost && Number(workOrder.estimated_cost) > 0) ? workOrder.estimated_cost : numericCost
     });
 
     try {
@@ -918,7 +930,9 @@ export class WorkOrderService {
         contractor_critical_quote_approved_by: currentUser?.name || 'Works Engineer',
         contractor_critical_quote_approved_at: now,
         contractor_critical_quote_engineer_notes: engineerNotes || workOrder.contractor_critical_quote_engineer_notes,
-        actual_cost: approvedAmount
+        actual_cost: approvedAmount,
+        status: 'verified',
+        verified_at: now
       });
 
       // Auto-generate invoice if not exists

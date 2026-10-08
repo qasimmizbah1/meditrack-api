@@ -12,7 +12,7 @@ import { ROLES, WORK_ORDER_STATUS, INSPECTION_STATUS } from '../config/constants
 
 const ALLOWED_TRANSITIONS = {
   [WORK_ORDER_STATUS.REPORTED]: {
-    allowedNext: [WORK_ORDER_STATUS.APPROVED, WORK_ORDER_STATUS.CANCELLED, WORK_ORDER_STATUS.CLOSED],
+    allowedNext: [WORK_ORDER_STATUS.APPROVED, WORK_ORDER_STATUS.ASSIGNED, WORK_ORDER_STATUS.CANCELLED, WORK_ORDER_STATUS.CLOSED],
     allowedRoles: [ROLES.APPROVER, ROLES.ADMIN]
   },
   [WORK_ORDER_STATUS.APPROVED]: {
@@ -222,7 +222,7 @@ export class WorkflowService {
             amount: amount,
             tax_amount: 0,
             total_amount: amount,
-            status: 'pending',
+            status: 'paid',
             due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             notes: `Auto-generated contractor claim for approved & verified work order [${updatedWorkOrder.tracking_number || workOrder.tracking_number}] - ${updatedWorkOrder.title || workOrder.title}`,
             pdf_url: null
@@ -232,8 +232,10 @@ export class WorkflowService {
             workOrderId,
             status: 'invoice_submitted',
             actorId: actor ? actor.id : 'system',
-            notes: `Work order approved and closed. Contractor Invoice [${invoiceNumber}] automatically generated for R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}.`
+            notes: `Work order approved and closed. Contractor Invoice [${invoiceNumber}] automatically generated and settled for R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}.`
           });
+        } else if (existingInv.status !== 'paid') {
+          await InvoiceRepository.updateStatus(existingInv.id, 'paid');
         }
       } catch (invErr) {
         console.warn('Auto-invoice creation on work order close skipped:', invErr.message);
