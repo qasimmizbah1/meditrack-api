@@ -70,13 +70,13 @@ async function runFullSuite() {
     if (!data.data?.currency) throw new Error('Settings missing currency property');
   });
 
-  await test('Update System Settings (Currency to USD)', async () => {
+  await test('Update System Settings (Currency to ZAR)', async () => {
     const data = await api('/settings', {
       method: 'PATCH',
       headers: adminHeaders,
-      body: JSON.stringify({ currency: 'USD', currency_symbol: '$' })
+      body: JSON.stringify({ currency: 'ZAR', currency_symbol: 'R' })
     });
-    if (data.data?.currency !== 'USD') throw new Error('Currency update response mismatch');
+    if (data.data?.currency !== 'ZAR') throw new Error('Currency update response mismatch');
   });
 
   // 4. Users CRUD

@@ -575,6 +575,22 @@ export class WorkOrderService {
       payload.quote_status = 'under_review';
     }
 
+    // Strict Sequential 3-Way Sign-off Enforcement: 1. Inspector -> 2. Engineer -> 3. Facilities Manager
+    if (payload.signoff_engineer_by && !workOrder.signoff_engineer_by) {
+      if (!workOrder.signoff_inspector_by && !payload.signoff_inspector_by && currentUser?.role !== 'ADMIN') {
+        const error = new Error('Sequential Sign-off Requirement: Step 1 (Works Inspector Statutory & Quality sign-off) must be completed before Works Engineer sign-off.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+    if (payload.signoff_fm_by && !workOrder.signoff_fm_by) {
+      if (!workOrder.signoff_engineer_by && !payload.signoff_engineer_by && currentUser?.role !== 'ADMIN') {
+        const error = new Error('Sequential Sign-off Requirement: Step 2 (Works Engineer Technical sign-off) must be completed before Facilities Manager operational handover sign-off.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
     // 3-Way Tri-Signature Completion Logic (PDF Page 5)
     const hasEng = payload.signoff_engineer_by || workOrder.signoff_engineer_by;
     const hasFm = payload.signoff_fm_by || workOrder.signoff_fm_by;

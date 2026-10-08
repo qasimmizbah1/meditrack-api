@@ -21,5 +21,5 @@ VALUES
     ('notif_001', 'usr_admin_01', 'System Security Audit Active', 'Deterministic SHA-256 Merkle Ledger audit engine initialized.', 'info', '/dashboard', 0, datetime('now', '-2 hours')),
     ('notif_002', 'usr_admin_01', 'New Quality Inspection Conducted', 'QC Inspector filed PASS for MRI Chiller coolant replacement.', 'success', '/inspections', 0, datetime('now', '-30 minutes')),
     ('notif_003', 'usr_contractor_01', 'Work Order Assigned', 'You have been assigned to WO-2026-0001 (Emergency Power Generator Overhaul).', 'work_order', '/work-orders', 0, datetime('now', '-1 hour')),
-    ('notif_004', 'usr_approver_01', 'Pending Invoice Claim', 'MedTech Solutions submitted invoice for $12,500 awaiting approval.', 'invoice', '/invoices', 0, datetime('now', '-15 minutes')),
+    ('notif_004', 'usr_approver_01', 'Pending Invoice Claim', 'MedTech Solutions submitted invoice for R12,500 awaiting approval.', 'invoice', '/invoices', 0, datetime('now', '-15 minutes')),
     ('notif_005', 'usr_inspector_01', 'QC Inspection Required', 'WO-2026-0002 has completed repair and is ready for safety inspection.', 'warning', '/inspections', 0, datetime('now', '-5 minutes'));

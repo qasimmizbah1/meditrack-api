@@ -188,8 +188,13 @@ export class WorkflowService {
 
     if (targetStatus === WORK_ORDER_STATUS.COMPLETED) {
       updatePayload.completed_at = timestamp;
-      // Guarantee actual_cost is strictly the budget approved by the Approver
-      updatePayload.actual_cost = workOrder.estimated_cost ?? workOrder.actual_cost ?? actualCost ?? 0;
+      const finalActualCost = (actualCost !== undefined && actualCost !== null && Number(actualCost) >= 0)
+        ? Number(actualCost)
+        : (workOrder.actual_cost ?? workOrder.estimated_cost ?? 0);
+      updatePayload.actual_cost = finalActualCost;
+      if (!workOrder.estimated_cost || Number(workOrder.estimated_cost) === 0) {
+        updatePayload.estimated_cost = finalActualCost;
+      }
     } else if (targetStatus === WORK_ORDER_STATUS.VERIFIED) {
       updatePayload.verified_at = timestamp;
     } else if (targetStatus === WORK_ORDER_STATUS.CLOSED || targetStatus === WORK_ORDER_STATUS.CANCELLED) {

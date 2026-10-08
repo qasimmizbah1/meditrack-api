@@ -207,12 +207,12 @@ export class InvoiceService {
       const notifConfig = {
         [INVOICE_STATUS.APPROVED]: {
           title: `Invoice Approved: ${invoice.invoice_number}`,
-          message: `Invoice claim ${invoice.invoice_number} ($${Number(invoice.total_amount).toLocaleString()}) was approved by ${actorUser?.name || 'Approver'}.`,
+          message: `Invoice claim ${invoice.invoice_number} (R ${Number(invoice.total_amount).toLocaleString()}) was approved by ${actorUser?.name || 'Approver'}.`,
           type: 'success'
         },
         [INVOICE_STATUS.PAID]: {
           title: `Invoice Paid & Settled: ${invoice.invoice_number}`,
-          message: `Invoice claim ${invoice.invoice_number} ($${Number(invoice.total_amount).toLocaleString()}) has been paid and marked settled.`,
+          message: `Invoice claim ${invoice.invoice_number} (R ${Number(invoice.total_amount).toLocaleString()}) has been paid and marked settled.`,
           type: 'success'
         },
         [INVOICE_STATUS.REJECTED]: {
