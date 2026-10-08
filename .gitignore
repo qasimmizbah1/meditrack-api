@@ -15,3 +15,6 @@ uploads/*
 !uploads/contractors/.gitkeep
 !uploads/inspections/.gitkeep
 !uploads/work-orders/.gitkeep
+*.sqlite-shm
+*.sqlite-wal
+
