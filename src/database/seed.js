@@ -239,7 +239,7 @@ async function seedDatabase() {
         `INSERT INTO contractor_documents (id, contractor_id, title, document_type, file_url, expiry_date, status)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO NOTHING`,
-        [`doc_${c.id}_02`, c.id, '$10,000,000 Commercial General Liability Policy', 'Insurance', '/uploads/contractors/insurance-policy.pdf', '2027-06-30', 'valid']
+        [`doc_${c.id}_02`, c.id, 'R10,000,000 Commercial General Liability Policy', 'Insurance', '/uploads/contractors/insurance-policy.pdf', '2027-06-30', 'valid']
       );
     }
     console.log('✅ Contractors & Compliance Documents seeded.');
