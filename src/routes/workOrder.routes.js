@@ -10,6 +10,13 @@ import {
   requestEngineer,
   handleEngineerRequest,
   reviewEstimate,
+  submitCriticalQuote,
+  reviewCriticalQuote,
+  getContractorQuotations,
+  inviteContractors,
+  submitContractorQuotation,
+  recommendContractorQuotation,
+  reviewContractorRecommendation,
   deleteWorkOrder,
   clearAllWorkOrders
 } from '../controllers/workOrder.controller.js';
@@ -75,6 +82,26 @@ router.post(
   '/:id/review-estimate',
   reviewEstimate
 );
+
+// Critical Emergency Job Quote Submission (by Contractor)
+router.post(
+  '/:id/critical-quote',
+  submitCriticalQuote
+);
+
+// Critical Emergency Job Quote Review (Adjust / Approve with Auto-Invoice by Works Engineer)
+router.post(
+  '/:id/critical-quote-review',
+  reviewCriticalQuote
+);
+
+// Multi-Contractor Quotations & Selection
+router.get('/:id/quotations', getContractorQuotations);
+router.post('/:id/invite-contractors', inviteContractors);
+router.post('/:id/quotations', submitContractorQuotation);
+router.post('/:id/recommend-quotation', recommendContractorQuotation);
+router.post('/:id/review-quotation-recommendation', reviewContractorRecommendation);
+
 
 // Workflow Status Transition (Immutable event & SHA-256 hash generation)
 router.patch(

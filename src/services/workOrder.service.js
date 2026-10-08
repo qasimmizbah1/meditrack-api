@@ -9,6 +9,8 @@ import { WORK_ORDER_STATUS } from '../config/constants.js';
 
 import { StatusEventRepository, GENESIS_HASH } from '../repositories/statusEvent.repository.js';
 import { InspectionRepository } from '../repositories/inspection.repository.js';
+import { InvoiceRepository } from '../repositories/invoice.repository.js';
+import { ContractorQuotationRepository } from '../repositories/contractorQuotation.repository.js';
 import { computeEventHash } from '../utils/crypto.js';
 
 export class WorkOrderService {
@@ -49,19 +51,41 @@ export class WorkOrderService {
       throw AppError.notFound(`Work order with ID ${id} not found`);
     }
 
-    const [photos, inspections, events] = await Promise.all([
+    const [photos, inspections, events, quotations] = await Promise.all([
       WorkOrderRepository.getPhotos(id),
       InspectionRepository.findByWorkOrderId(id),
-      StatusEventRepository.getEventsByWorkOrderId(id)
+      StatusEventRepository.getEventsByWorkOrderId(id),
+      ContractorQuotationRepository.findByWorkOrderId(id)
     ]);
 
     // Blind Quoting Governance:
-    // If currentUser is CONTRACTOR, assessor_estimate, assessment_notes, and internal estimated_cost are redacted.
+    // If currentUser is CONTRACTOR, assessor_estimate, assessment_notes, internal estimated_cost, and itemized cost rates are redacted.
     const isContractor = currentUser && (currentUser.role === 'CONTRACTOR' || currentUser.role === 'contractor');
     if (isContractor) {
       workOrder.assessor_estimate = null;
       workOrder.assessment_notes = null;
       workOrder.estimated_cost = null;
+
+      if (workOrder.assessment_itemized_breakdown) {
+        try {
+          const parsed = JSON.parse(workOrder.assessment_itemized_breakdown);
+          if (Array.isArray(parsed)) {
+            const sanitized = parsed.map(item => ({
+              id: item.id,
+              type: item.type,
+              title: item.title,
+              description: item.description
+            }));
+            workOrder.assessment_itemized_breakdown = JSON.stringify(sanitized);
+          }
+        } catch (e) {}
+      }
+    }
+
+    let visibleQuotations = quotations || [];
+    if (isContractor) {
+      // Contractor can only see their own submitted quotation
+      visibleQuotations = visibleQuotations.filter(q => q.contractor_id === currentUser.id);
     }
 
     return {
@@ -69,7 +93,8 @@ export class WorkOrderService {
       is_blind_quoted: !!isContractor,
       photos,
       inspections,
-      events
+      events,
+      quotations: visibleQuotations
     };
   }
 
@@ -363,7 +388,10 @@ export class WorkOrderService {
       refer_to_engineer,
       assessment_hours,
       estimated_days,
-      due_date
+      due_date,
+      itemized_breakdown,
+      timesheet_data,
+      timesheet_hours
     } = assessmentData;
 
     // Handle Referral to Works Engineer by Inspector
@@ -392,16 +420,15 @@ export class WorkOrderService {
       fundingRoute = 'route_b';
     }
 
-    let calculatedDueDate = due_date || workOrder.due_date || null;
-    if (estimated_days !== undefined && estimated_days !== '' && Number(estimated_days) > 0) {
-      calculatedDueDate = new Date(Date.now() + Number(estimated_days) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const numericEstimatedDays = estimated_days !== undefined && estimated_days !== '' && Number(estimated_days) > 0 ? Number(estimated_days) : (workOrder.estimated_days || 3);
+    if (!calculatedDueDate && numericEstimatedDays > 0) {
+      calculatedDueDate = new Date(Date.now() + numericEstimatedDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     }
 
-    const numericEstimatedDays = estimated_days !== undefined && estimated_days !== '' && Number(estimated_days) > 0 ? Number(estimated_days) : null;
-
-    await WorkOrderRepository.update(id, {
+    const isEngineerUser = currentUser.inspector_scope === 'works_engineer' || assessor_role === 'works_engineer';
+    const updatePayload = {
       assessment_type,
-      assessor_role: assessor_role || workOrder.lead_assessor_role || 'works_inspector',
+      assessor_role: assessor_role || workOrder.lead_assessor_role || (isEngineerUser ? 'works_engineer' : 'works_inspector'),
       assessor_id: currentUser.id,
       assessor_estimate: numericEstimate,
       estimated_cost: numericEstimate,
@@ -413,8 +440,27 @@ export class WorkOrderService {
       assessor_request_status: workOrder.assessor_request_status === 'pending' ? 'fulfilled' : workOrder.assessor_request_status,
       assessment_notes: assessment_notes || null,
       assessment_date: new Date().toISOString(),
-      funding_route: fundingRoute
-    });
+      funding_route: fundingRoute,
+      assessment_itemized_breakdown: itemized_breakdown ? (typeof itemized_breakdown === 'string' ? itemized_breakdown : JSON.stringify(itemized_breakdown)) : null
+    };
+
+    if (timesheet_data && timesheet_hours !== undefined && timesheet_hours !== null && timesheet_hours !== '') {
+      const tsJson = typeof timesheet_data === 'string' ? timesheet_data : JSON.stringify(timesheet_data);
+      const now = new Date().toISOString();
+      if (isEngineerUser) {
+        updatePayload.engineer_timesheet_data = tsJson;
+        updatePayload.engineer_timesheet_hours = Number(timesheet_hours) || 0;
+        updatePayload.engineer_timesheet_by = currentUser.name;
+        updatePayload.engineer_timesheet_at = now;
+      } else {
+        updatePayload.inspector_timesheet_data = tsJson;
+        updatePayload.inspector_timesheet_hours = Number(timesheet_hours) || 0;
+        updatePayload.inspector_timesheet_by = currentUser.name;
+        updatePayload.inspector_timesheet_at = now;
+      }
+    }
+
+    await WorkOrderRepository.update(id, updatePayload);
 
     // Record Immutable Status/Audit Event for Ledger
     try {
@@ -743,6 +789,442 @@ export class WorkOrderService {
     }
     await WorkOrderRepository.deleteById(id);
     return { success: true, message: `Work order ${workOrder.tracking_number} deleted successfully` };
+  }
+
+  static async submitCriticalQuote(id, { cost, breakdown, notes }, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(id);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${id} not found`);
+    }
+
+    const numericCost = Number(cost);
+    if (isNaN(numericCost) || numericCost <= 0) {
+      throw AppError.badRequest('Please enter a valid quoted cost greater than 0');
+    }
+
+    const breakdownStr = typeof breakdown === 'object' ? JSON.stringify(breakdown) : (breakdown || '');
+
+    await WorkOrderRepository.update(id, {
+      contractor_critical_quote_cost: numericCost,
+      contractor_critical_quote_breakdown: breakdownStr,
+      contractor_critical_quote_status: 'submitted',
+      contractor_critical_quote_submitted_at: new Date().toISOString()
+    });
+
+    try {
+      await StatusEventRepository.recordEvent({
+        workOrderId: id,
+        status: 'quote_submitted',
+        actorId: currentUser ? currentUser.id : 'contractor',
+        notes: `Contractor submitted Critical Emergency Job Quote for R ${numericCost.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} for Works Engineer technical review.`
+      });
+    } catch (evtErr) {
+      console.warn('Failed to record critical quote submit event:', evtErr.message);
+    }
+
+    // Trigger notification to Works Engineers and Admins
+    try {
+      const engineers = await UserRepository.findAll({ role: 'INSPECTOR' });
+      const admins = await UserRepository.findAll({ role: 'ADMIN' });
+      const recipients = [...engineers, ...admins];
+      for (const recipient of recipients) {
+        if (recipient.id !== currentUser?.id) {
+          await NotificationService.sendNotification({
+            userId: recipient.id,
+            title: `Critical Quote Submitted: ${workOrder.tracking_number}`,
+            message: `Contractor submitted a critical repair quote of R ${numericCost.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} for ${workOrder.title}. Action Required: Please review and adjust or approve.`,
+            type: 'warning',
+            link: `/work-orders/${id}`
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Failed to send notification for critical quote:', notifErr.message);
+    }
+
+    return WorkOrderRepository.findById(id);
+  }
+
+  static async reviewCriticalQuote(id, { action, adjustedCost, engineerNotes }, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(id);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${id} not found`);
+    }
+
+    if (action === 'adjust') {
+      const numericAdj = Number(adjustedCost);
+      if (isNaN(numericAdj) || numericAdj <= 0) {
+        throw AppError.badRequest('Please enter a valid adjusted cost greater than 0');
+      }
+
+      await WorkOrderRepository.update(id, {
+        contractor_critical_quote_cost: numericAdj,
+        contractor_critical_quote_status: 'adjusted',
+        contractor_critical_quote_engineer_notes: engineerNotes || 'Cost adjusted by Works Engineer'
+      });
+
+      try {
+        await StatusEventRepository.recordEvent({
+          workOrderId: id,
+          status: 'assessment_adjusted',
+          actorId: currentUser ? currentUser.id : 'engineer',
+          notes: `Works Engineer adjusted Critical Job Quote to R ${numericAdj.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}. Notes: ${engineerNotes || 'Adjustment applied'}`
+        });
+      } catch (evtErr) {
+        console.warn('Failed to record critical quote adjust event:', evtErr.message);
+      }
+
+      return WorkOrderRepository.findById(id);
+    }
+
+    if (action === 'approve') {
+      const approvedAmount = Number(adjustedCost || workOrder.contractor_critical_quote_cost || workOrder.actual_cost || workOrder.estimated_cost || 0);
+      const now = new Date().toISOString();
+
+      await WorkOrderRepository.update(id, {
+        contractor_critical_quote_cost: approvedAmount,
+        contractor_critical_quote_status: 'approved',
+        contractor_critical_quote_approved_by: currentUser?.name || 'Works Engineer',
+        contractor_critical_quote_approved_at: now,
+        contractor_critical_quote_engineer_notes: engineerNotes || workOrder.contractor_critical_quote_engineer_notes,
+        actual_cost: approvedAmount
+      });
+
+      // Auto-generate invoice if not exists
+      const existingInv = await InvoiceRepository.findByWorkOrderId(id);
+      let invoiceNumber = existingInv?.invoice_number;
+
+      if (!existingInv) {
+        const invId = crypto.randomUUID();
+        invoiceNumber = await InvoiceRepository.generateNextInvoiceNumber();
+        const contractorId = workOrder.contractor_id || workOrder.assigned_to || 'usr_contractor_01';
+
+        await InvoiceRepository.create({
+          id: invId,
+          invoice_number: invoiceNumber,
+          work_order_id: id,
+          contractor_id: contractorId,
+          amount: approvedAmount,
+          tax_amount: 0,
+          total_amount: approvedAmount,
+          status: 'pending',
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          notes: `Auto-generated contractor claim for approved Critical Emergency Job [${workOrder.tracking_number}] - ${workOrder.title}`,
+          pdf_url: null
+        });
+      }
+
+      try {
+        await StatusEventRepository.recordEvent({
+          workOrderId: id,
+          status: 'invoice_submitted',
+          actorId: currentUser ? currentUser.id : 'engineer',
+          notes: `Works Engineer approved Critical Emergency Quote of R ${approvedAmount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}. Official Contractor Invoice [${invoiceNumber}] automatically generated for Payment Approver settlement.`
+        });
+      } catch (evtErr) {
+        console.warn('Failed to record critical quote approve event:', evtErr.message);
+      }
+
+      // Notify Payment Approvers
+      try {
+        const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+        const admins = await UserRepository.findAll({ role: 'ADMIN' });
+        const recipients = [...approvers, ...admins];
+        for (const recipient of recipients) {
+          if (recipient.id !== currentUser?.id) {
+            await NotificationService.sendNotification({
+              userId: recipient.id,
+              title: `Critical Invoice Ready for Settlement: ${workOrder.tracking_number}`,
+              message: `Works Engineer approved emergency claim of R ${approvedAmount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} for ${workOrder.title}. Action Required: Please review and settle payment.`,
+              type: 'critical',
+              link: `/work-orders/${id}`
+            });
+          }
+        }
+      } catch (notifErr) {
+        console.warn('Failed to send payment approver notification:', notifErr.message);
+      }
+
+      return WorkOrderRepository.findById(id);
+    }
+
+    throw AppError.badRequest(`Invalid action: ${action}. Expected 'adjust' or 'approve'.`);
+  }
+
+
+  static async getContractorQuotations(workOrderId) {
+    return await ContractorQuotationRepository.findByWorkOrderId(workOrderId);
+  }
+
+  static async inviteContractors(workOrderId, { invitationMode, contractorIds, invitationNotes }, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(workOrderId);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
+    }
+
+    if (!contractorIds || !Array.isArray(contractorIds) || contractorIds.length === 0) {
+      throw AppError.badRequest('Please select at least one contractor to invite.');
+    }
+
+    if (invitationMode === 'single' && contractorIds.length !== 1) {
+      throw AppError.badRequest('Single contractor mode requires exactly 1 contractor.');
+    }
+
+    if (invitationMode === 'multi' && (contractorIds.length < 2 || contractorIds.length > 3)) {
+      throw AppError.badRequest('Multi-contractor mode requires 2 to 3 contractors for competitive bidding.');
+    }
+
+    const now = new Date().toISOString();
+    await WorkOrderRepository.update(workOrderId, {
+      invited_contractor_ids: JSON.stringify(contractorIds),
+      quote_invitation_mode: invitationMode || (contractorIds.length > 1 ? 'multi' : 'single'),
+      quote_invitation_notes: invitationNotes || null,
+      quote_invited_at: now,
+      quote_status: 'awaiting_contractor_quotes'
+    });
+
+    // Notify each invited contractor
+    try {
+      for (const cId of contractorIds) {
+        await NotificationService.sendNotification({
+          userId: cId,
+          title: `Quotation Invitation: ${workOrder.tracking_number}`,
+          message: `You are invited by ${currentUser.name} to submit a quotation for ${workOrder.tracking_number} (${workOrder.title}). Please review the itemized scope and submit your quotation.`,
+          type: 'info',
+          link: `/work-orders/${workOrderId}`
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Failed to send contractor invitation notifications:', notifErr.message);
+    }
+
+    try {
+      await StatusEventRepository.recordEvent({
+        workOrderId,
+        status: 'contractors_invited',
+        actorId: currentUser.id,
+        notes: `${currentUser.name} invited ${contractorIds.length} contractor(s) (${invitationMode === 'multi' ? 'Competitive Bidding' : 'Single Contractor'}) for quotation submission.${invitationNotes ? ` Notes: ${invitationNotes}` : ''}`
+      });
+    } catch (auditErr) {
+      console.warn('Failed to record contractor invitation audit event:', auditErr.message);
+    }
+
+    return await WorkOrderRepository.findById(workOrderId);
+  }
+
+  static async submitContractorQuotation(workOrderId, data, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(workOrderId);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
+    }
+
+    const { amount, quote_ref, breakdown, notes } = data;
+    if (!amount || Number(amount) <= 0) {
+      throw AppError.badRequest('Quotation amount must be greater than 0');
+    }
+
+    const quotation = await ContractorQuotationRepository.create({
+      work_order_id: workOrderId,
+      contractor_id: currentUser.id,
+      contractor_name: currentUser.name,
+      quote_ref,
+      amount: Number(amount),
+      breakdown,
+      notes
+    });
+
+    await WorkOrderRepository.update(workOrderId, {
+      quote_status: 'submitted',
+      estimated_cost: workOrder.estimated_cost || Number(amount)
+    });
+
+    // Notify Works Engineers
+    try {
+      const engineers = await UserRepository.findAll({ role: 'INSPECTOR' });
+      const targetEngineers = engineers.filter(e => ['works_engineer', 'both'].includes(e.inspector_scope || ''));
+      for (const eng of targetEngineers) {
+        await NotificationService.sendNotification({
+          userId: eng.id,
+          title: `Contractor Quote Received: ${workOrder.tracking_number}`,
+          message: `${currentUser.name} submitted a formal quote of R ${Number(amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}. Action Required: Review and recommend contractor.`,
+          type: 'info',
+          link: `/work-orders/${workOrderId}`
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Failed to notify engineers of contractor quote:', notifErr.message);
+    }
+
+    try {
+      await StatusEventRepository.recordEvent({
+        workOrderId,
+        status: 'quote_submitted',
+        actorId: currentUser.id,
+        notes: `Contractor ${currentUser.name} submitted formal quotation ${quote_ref ? `[${quote_ref}] ` : ''}(R ${Number(amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}).`
+      });
+    } catch (auditErr) {
+      console.warn('Failed to record contractor quote audit event:', auditErr.message);
+    }
+
+    return quotation;
+  }
+
+  static async recommendContractorQuotation(workOrderId, { quoteId, recommendationNotes }, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(workOrderId);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
+    }
+
+    const quote = await ContractorQuotationRepository.findById(quoteId);
+    if (!quote || quote.work_order_id !== workOrderId) {
+      throw AppError.notFound('Selected quotation not found for this work order');
+    }
+
+    await ContractorQuotationRepository.updateStatus(quoteId, 'recommended');
+
+    await WorkOrderRepository.update(workOrderId, {
+      selected_contractor_quote_id: quoteId,
+      engineer_recommendation_notes: recommendationNotes || null,
+      engineer_recommended_by: currentUser.name,
+      engineer_recommended_at: new Date().toISOString(),
+      contractor_approver_action: 'pending'
+    });
+
+    // Notify Contractor Approvers & Admins
+    try {
+      const approvers = await UserRepository.findAll({ role: 'APPROVER' });
+      const targetApprovers = approvers.filter(a => ['contractor_approver', 'procurement', 'general'].includes(a.approver_scope || 'general'));
+      const admins = await UserRepository.findAll({ role: 'ADMIN' });
+      const recipients = [...targetApprovers, ...admins];
+
+      for (const rec of recipients) {
+        if (rec.id !== currentUser.id) {
+          await NotificationService.sendNotification({
+            userId: rec.id,
+            title: `Contractor Recommendation: ${workOrder.tracking_number}`,
+            message: `Works Engineer ${currentUser.name} recommended ${quote.contractor_name} (R ${Number(quote.amount).toLocaleString('en-ZA')}) for ${workOrder.title}. Action: Approve & Assign or Re-evaluate.`,
+            type: 'warning',
+            link: `/work-orders/${workOrderId}`
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.warn('Failed to notify approvers of engineer quote recommendation:', notifErr.message);
+    }
+
+    try {
+      await StatusEventRepository.recordEvent({
+        workOrderId,
+        status: 'quote_recommended',
+        actorId: currentUser.id,
+        notes: `Works Engineer ${currentUser.name} recommended contractor quote from ${quote.contractor_name} (R ${Number(quote.amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}).${recommendationNotes ? ` Rationale: ${recommendationNotes}` : ''}`
+      });
+    } catch (auditErr) {
+      console.warn('Failed to record quote recommendation audit event:', auditErr.message);
+    }
+
+    return await WorkOrderRepository.findById(workOrderId);
+  }
+
+  static async reviewContractorRecommendation(workOrderId, { action, notes }, currentUser) {
+    const workOrder = await WorkOrderRepository.findById(workOrderId);
+    if (!workOrder) {
+      throw AppError.notFound(`Work order with ID ${workOrderId} not found`);
+    }
+
+    if (action === 'approved') {
+      if (!workOrder.selected_contractor_quote_id) {
+        throw AppError.badRequest('No contractor quote currently recommended by Works Engineer to approve');
+      }
+
+      const quote = await ContractorQuotationRepository.findById(workOrder.selected_contractor_quote_id);
+      if (!quote) {
+        throw AppError.notFound('Recommended quote not found');
+      }
+
+      await ContractorQuotationRepository.updateStatus(quote.id, 'assigned');
+      await ContractorQuotationRepository.updateAllStatusForWorkOrderExcept(workOrderId, quote.id, 'rejected');
+
+      await WorkOrderRepository.update(workOrderId, {
+        contractor_approver_action: 'approved',
+        contractor_approver_notes: notes || 'Contractor recommendation approved by Procurement Approver',
+        contractor_approver_by: currentUser.name,
+        contractor_approver_at: new Date().toISOString(),
+        assigned_to: quote.contractor_id,
+        contractor_id: quote.contractor_id,
+        estimated_cost: quote.amount,
+        quote_status: 'client_approved'
+      });
+
+      // Transition Status to ASSIGNED
+      await WorkflowService.transitionStatus({
+        workOrderId,
+        targetStatus: WORK_ORDER_STATUS.ASSIGNED,
+        actor: currentUser,
+        assignedTo: quote.contractor_id,
+        notes: `Contractor allocated upon quote approval: ${quote.contractor_name} (R ${Number(quote.amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })})`
+      });
+
+      // Notify Contractor: You have been assigned!
+      try {
+        await NotificationService.sendNotification({
+          userId: quote.contractor_id,
+          title: `Work Order Assigned: ${workOrder.tracking_number}`,
+          message: `You have been assigned to ${workOrder.tracking_number} (${workOrder.title}) with approved budget R ${Number(quote.amount).toLocaleString('en-ZA')}. You may now start field work.`,
+          type: 'success',
+          link: `/work-orders/${workOrderId}`
+        });
+      } catch (notifErr) {
+        console.warn('Failed to notify assigned contractor:', notifErr.message);
+      }
+
+      return await WorkOrderRepository.findById(workOrderId);
+    } else if (action === 'reevaluate') {
+      const now = new Date().toISOString();
+      await WorkOrderRepository.update(workOrderId, {
+        contractor_approver_action: 'reevaluate',
+        contractor_approver_notes: notes || 'Procurement requested quotation re-evaluation and alternative scoping review',
+        contractor_approver_by: currentUser.name,
+        contractor_approver_at: now,
+        selected_contractor_quote_id: null
+      });
+
+      if (workOrder.selected_contractor_quote_id) {
+        await ContractorQuotationRepository.updateStatus(workOrder.selected_contractor_quote_id, 'submitted');
+      }
+
+      // Notify Works Engineer to re-evaluate
+      try {
+        const engineers = await UserRepository.findAll({ role: 'INSPECTOR' });
+        const targetEngineers = engineers.filter(e => ['works_engineer', 'both'].includes(e.inspector_scope || ''));
+        for (const eng of targetEngineers) {
+          await NotificationService.sendNotification({
+            userId: eng.id,
+            title: `Re-evaluation Requested: ${workOrder.tracking_number}`,
+            message: `Contractor Approver ${currentUser.name} requested re-evaluation of contractor quotes for ${workOrder.tracking_number}. Reason: "${notes || 'Please re-evaluate'}"`,
+            type: 'warning',
+            link: `/work-orders/${workOrderId}`
+          });
+        }
+      } catch (notifErr) {
+        console.warn('Failed to notify engineer of re-evaluation request:', notifErr.message);
+      }
+
+      try {
+        await StatusEventRepository.recordEvent({
+          workOrderId,
+          status: 'quote_reevaluation_requested',
+          actorId: currentUser.id,
+          notes: `Contractor Approver ${currentUser.name} requested re-evaluation of quotations.${notes ? ` Notes: ${notes}` : ''}`
+        });
+      } catch (auditErr) {
+        console.warn('Failed to record re-evaluation audit event:', auditErr.message);
+      }
+
+      return await WorkOrderRepository.findById(workOrderId);
+    }
+
+    throw AppError.badRequest(`Invalid action: ${action}. Expected 'approved' or 'reevaluate'.`);
   }
 
   static async clearAllWorkOrders(currentUser) {

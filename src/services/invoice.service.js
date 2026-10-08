@@ -149,13 +149,13 @@ export class InvoiceService {
       throw new AppError('Invoice not found', 404);
     }
 
-    // Require associated work order to be VERIFIED or CLOSED before Approving or Paying invoice claim
+    // Require associated work order to be COMPLETED, VERIFIED or CLOSED before Approving or Paying invoice claim
     if ((status === INVOICE_STATUS.APPROVED || status === INVOICE_STATUS.PAID) && invoice.work_order_id) {
       const wo = await WorkOrderRepository.findById(invoice.work_order_id);
       if (wo) {
-        if (wo.status !== WORK_ORDER_STATUS.CLOSED && wo.status !== WORK_ORDER_STATUS.VERIFIED) {
+        if (wo.status !== WORK_ORDER_STATUS.CLOSED && wo.status !== WORK_ORDER_STATUS.VERIFIED && wo.status !== WORK_ORDER_STATUS.COMPLETED) {
           throw new AppError(
-            `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Verified or Closed first (currently '${wo.status}').`,
+            `Cannot ${status} invoice. Associated work order (${wo.tracking_number}) must be Completed, Verified, or Closed first (currently '${wo.status}').`,
             400
           );
         }
@@ -240,11 +240,11 @@ export class InvoiceService {
       console.warn('Failed to send invoice status notification:', notifErr.message);
     }
 
-    // If invoice is marked as PAID, automatically close the verified work order and record audit event
+    // If invoice is marked as PAID, automatically close the work order and record audit event
     if (status === INVOICE_STATUS.PAID && invoice.work_order_id) {
       try {
         const wo = await WorkOrderRepository.findById(invoice.work_order_id);
-        if (wo && wo.status === WORK_ORDER_STATUS.VERIFIED) {
+        if (wo && (wo.status === WORK_ORDER_STATUS.VERIFIED || wo.status === WORK_ORDER_STATUS.COMPLETED)) {
           await WorkflowService.transitionStatus({
             workOrderId: invoice.work_order_id,
             targetStatus: WORK_ORDER_STATUS.CLOSED,

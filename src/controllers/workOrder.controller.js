@@ -58,6 +58,16 @@ export const uploadWorkOrderPhotos = catchAsync(async (req, res) => {
   return ApiResponse.created(res, photos, 'Photos uploaded successfully');
 });
 
+export const submitCriticalQuote = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.submitCriticalQuote(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Critical quote submitted successfully');
+});
+
+export const reviewCriticalQuote = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.reviewCriticalQuote(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Critical quote review processed successfully');
+});
+
 export const deleteWorkOrder = catchAsync(async (req, res) => {
   const result = await WorkOrderService.deleteWorkOrder(req.params.id, req.user);
   return ApiResponse.success(res, result, result.message);
@@ -67,4 +77,31 @@ export const clearAllWorkOrders = catchAsync(async (req, res) => {
   const result = await WorkOrderService.clearAllWorkOrders(req.user);
   return ApiResponse.success(res, result, result.message);
 });
+
+export const getContractorQuotations = catchAsync(async (req, res) => {
+  const quotations = await WorkOrderService.getContractorQuotations(req.params.id);
+  return ApiResponse.success(res, quotations, 'Contractor quotations retrieved');
+});
+
+export const inviteContractors = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.inviteContractors(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Contractor(s) invited successfully for quotation submission');
+});
+
+export const submitContractorQuotation = catchAsync(async (req, res) => {
+  const quotation = await WorkOrderService.submitContractorQuotation(req.params.id, req.body, req.user);
+  return ApiResponse.created(res, quotation, 'Contractor quotation submitted successfully');
+});
+
+export const recommendContractorQuotation = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.recommendContractorQuotation(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Contractor quotation recommended to Approver');
+});
+
+export const reviewContractorRecommendation = catchAsync(async (req, res) => {
+  const workOrder = await WorkOrderService.reviewContractorRecommendation(req.params.id, req.body, req.user);
+  return ApiResponse.success(res, workOrder, 'Contractor quotation review processed successfully');
+});
+
+
 

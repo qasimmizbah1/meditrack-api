@@ -90,6 +90,9 @@ export const submitAssessmentSchema = z.object({
   due_date: z.string().optional().nullable(),
   assessment_notes: z.string().optional().nullable(),
   route_b_override: z.boolean().optional(),
-  refer_to_engineer: z.boolean().optional()
+  refer_to_engineer: z.boolean().optional(),
+  itemized_breakdown: z.any().optional().nullable(),
+  timesheet_data: z.any().optional().nullable(),
+  timesheet_hours: z.coerce.number().min(0).optional().nullable()
 });
 
